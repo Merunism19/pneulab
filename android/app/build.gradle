@@ -1,0 +1,50 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.pneulab.app'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.pneulab.app'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '1.0'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    // The web app is not copied into this folder by hand. The task below takes it from the
+    // project root at build time, so there is only ever one copy of the workshop to edit.
+    sourceSets {
+        main {
+            assets.srcDir(layout.buildDirectory.dir('webapp'))
+        }
+    }
+}
+
+def webRoot = rootProject.projectDir.parentFile
+
+def syncWeb = tasks.register('syncWeb', Sync) {
+    description = 'Copies the PneuLab web app into the assets of the Android app.'
+    from(webRoot) {
+        include 'index.html', 'view3d.html', 'manifest.webmanifest'
+        include 'css/**', 'js/**', 'icons/**'
+    }
+    into layout.buildDirectory.dir('webapp/www')
+}
+
+tasks.named('preBuild') {
+    dependsOn syncWeb
+}

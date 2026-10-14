@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PneuLab 3D bench</title>
+<link rel="stylesheet" href="css/style.css?v=18">
+<style>
+  body { overflow: hidden; background: #12161d; }
+  :root[data-theme="light"] body { background: #ece8e0; }
+  #gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  #gl:active { cursor: grabbing; }
+  #tags { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+  .tag { position: absolute; left: 0; top: 0; font: 700 11px/1.5 var(--mono); color: var(--ink); background: color-mix(in srgb, var(--panel) 80%, transparent); border: 1px solid var(--line); border-radius: 6px; padding: 0 5px; white-space: nowrap; will-change: transform; }
+  .tag.val { color: var(--air); }
+  .tag.warn { background: var(--hot); border-color: var(--hot); color: #fff; }
+  #hud { position: fixed; left: 0; right: 0; top: 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 12px 14px; pointer-events: none; flex-wrap: wrap; }
+  #hud > * { pointer-events: auto; }
+  .v-ttl { background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--line); border-radius: 12px; padding: 7px 13px; backdrop-filter: blur(6px); }
+  .v-ttl span { display: block; font: 700 10.5px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+  .v-ttl b { font: 700 15px var(--display); }
+  .v-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .v-bar .seg, .v-bar .btn { background: color-mix(in srgb, var(--panel) 88%, transparent); backdrop-filter: blur(6px); }
+  .v-bar .btn.power { background: var(--ok); }
+  body.running .v-bar .btn.power { background: var(--hot); border-color: var(--hot); }
+  body.running .v-bar .btn.power i { opacity: 1; }
+  #v-card { position: fixed; right: 14px; bottom: 14px; width: 250px; background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--line); border-radius: 12px; padding: 11px 13px; backdrop-filter: blur(6px); box-shadow: var(--shadow); }
+  #v-card h4 { margin: 0 0 6px; font: 700 14px var(--display); }
+  #v-card div { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; padding: 2px 0; border-top: 1px dashed var(--line); }
+  #v-card div span { color: var(--muted); } #v-card div b { font: 600 12px var(--mono); text-align: right; }
+  #v-equip { position: fixed; left: 14px; top: 74px; width: 270px; max-height: calc(100% - 150px); overflow: auto; background: color-mix(in srgb, var(--panel) 93%, transparent); border: 1px solid var(--line); border-radius: 12px; padding: 11px 13px; backdrop-filter: blur(6px); box-shadow: var(--shadow); }
+  #v-equip h4 { margin: 0 0 6px; font: 700 14px var(--display); } #v-equip p { margin: 0; font-size: 13px; color: var(--muted); }
+  #v-equip div { display: flex; gap: 8px; font-size: 12.5px; padding: 3px 0; border-top: 1px dashed var(--line); }
+  #v-equip div b { font: 700 12px var(--mono); min-width: 30px; text-align: right; color: var(--accent); }
+  .v-bar .btn.on { border-color: var(--accent); color: var(--accent); }
+  #v-legend { position: fixed; left: 14px; bottom: 14px; max-width: min(560px, calc(100% - 300px)); font-size: 12px; color: var(--muted); background: color-mix(in srgb, var(--panel) 80%, transparent); border: 1px solid var(--line); border-radius: 10px; padding: 7px 11px; backdrop-filter: blur(6px); }
+  #v-legend i { display: inline-block; width: 16px; height: 4px; border-radius: 2px; vertical-align: middle; margin: 0 4px 2px 8px; }
+  #v-legend i:first-child { margin-left: 0; }
+  #v-msg { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: 430px; text-align: center; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 22px; box-shadow: var(--shadow); font-size: 14.5px; }
+  @media (max-width: 760px) {
+    #v-legend, .v-ttl { display: none; }
+    #hud { padding: 8px; flex-wrap: nowrap; }
+    .v-bar { flex: 1; min-width: 0; flex-wrap: nowrap; justify-content: flex-start; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+    .v-bar::-webkit-scrollbar { display: none; }
+    .v-bar > * { flex: none; }
+    .v-bar .btn.power { order: -1; padding: 7px 11px; }
+    .v-bar .seg button { padding: 8px 10px; font-size: 12.5px; }
+    #v-card { left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 32%; overflow: auto; }
+    #v-equip { left: 8px; right: 8px; top: 58px; width: auto; max-height: calc(100% - 70px); }
+    .tag { font-size: 10px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="tags"></div>
+<div id="hud">
+  <div class="v-ttl"><span>PneuLab · 3D bench</span><b id="v-title">&nbsp;</b></div>
+  <div class="v-bar">
+    <div class="seg" id="v-toggles">
+      <button data-k="bench" class="on" title="Bench: the electrical parts sit in training-lab units with 4 mm sockets and lab leads. Sheet: every symbol stands where you drew it">Bench</button>
+      <button data-k="xray" title="See the spool inside each valve">X-ray</button>
+      <button data-k="labels" class="on" title="Name tags and live readings">Labels</button>
+      <button data-k="links" class="on" title="Cables that join the two halves of one device: coil plug and valve, contact and limit switch">Links</button>
+      <button data-k="flow" class="on" title="Moving beads show current in wires and air in tubes">Flow</button>
+    </div>
+    <button class="btn ghost" id="v-list" title="The units, leads and tubes you would need to build this for real">Equipment</button>
+    <button class="btn ghost" id="v-top" title="Look straight down, like the circuit sheet">Top</button>
+    <button class="btn ghost" id="v-reset" title="Back to the starting view">Reset view</button>
+    <button class="btn ghost" id="v-shot" title="Save this view as a PNG picture">Photo</button>
+    <button class="btn power" id="v-power"><i></i><span>Power ON</span></button>
+  </div>
+</div>
+<div id="v-legend"><i style="background:#e5382f"></i>red lead: +24 V side<i style="background:#1e5bb8"></i>blue lead: 0 V side<i style="background:#25282d"></i>black lead: signal — it glows when live<i style="background:#12a9d1"></i>tube under pressure · moving beads are current and air · drag to look around, right-drag to slide, wheel to zoom, double-click to fly to a part, click a button to press it</div>
+<div id="v-card" class="hidden"></div>
+<div id="v-equip" class="hidden"></div>
+<div id="v-msg" class="hidden"></div>
+<script src="js/components.js?v=18"></script>
+<script src="js/gl3d.js?v=18"></script>
+<script src="js/view3d.js?v=18"></script>
+</body>
+</html>

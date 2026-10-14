@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#171c25">
+<meta name="description" content="PneuLab: learn electro-pneumatics by building and running real control circuits.">
+<title>PneuLab</title>
+<meta property="og:title" content="PneuLab — electro-pneumatics workshop">
+<meta property="og:description" content="Wire real control circuits, switch the bench on, and watch current and compressed air obey the laws of physics. 36 lessons, a sandbox and a 3D bench.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://merunism19.github.io/pneulab/">
+<meta property="og:image" content="https://merunism19.github.io/pneulab/icons/icon-512.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/style.css?v=18">
+</head>
+<body>
+
+<div id="home" class="screen"></div>
+
+<div id="work" class="screen hidden">
+  <header class="bar">
+    <button id="btn-home" class="btn ghost" title="Back to the lesson map">&lsaquo; <span class="hide-s">Lessons</span></button>
+    <div class="bar-title"><span id="w-kicker"></span><b id="w-title"></b></div>
+    <div class="bar-right">
+      <div class="seg" id="speed" title="Simulation speed">
+        <button data-s="0" title="Pause. The . key then steps 20 ms at a time">&#10074;&#10074;</button><button data-s="0.1">&#8530;&times;</button><button data-s="0.25">&frac14;&times;</button><button data-s="1" class="on">1&times;</button>
+      </div>
+      <button id="btn-3d" class="btn ghost" title="Open the 3D bench: this sheet as real hardware, in a second window">3D</button>
+      <button id="btn-book" class="btn ghost" title="Handbook">Handbook</button>
+      <button id="btn-more" class="btn ghost icon" title="Settings, speed, my circuits">&#8943;</button>
+      <button id="btn-snd" class="btn ghost icon" title="Sound on/off"></button>
+      <button id="btn-theme" class="btn ghost icon" title="Light / dark"></button>
+      <button id="btn-power" class="btn power"><i></i><span>Power ON</span></button>
+    </div>
+  </header>
+  <div class="work-body">
+    <aside id="palette"></aside>
+    <section id="stage">
+      <svg id="cv" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+            <circle cx="0.6" cy="0.6" r="0.6" class="griddot"/>
+          </pattern>
+        </defs>
+        <g id="view">
+          <rect x="-4000" y="-4000" width="8000" height="8000" fill="url(#grid)" class="gridbg"/>
+          <g id="l-zones"></g>
+          <g id="l-wires"></g>
+          <g id="l-comps"></g>
+          <g id="l-over"></g>
+          <g id="l-rubber"></g>
+        </g>
+      </svg>
+      <div id="modeflag"></div>
+      <div id="tools">
+        <button data-t="undo" title="Undo (Ctrl+Z)"><span class="hide-s">Undo</span><span class="only-s">&#8630;</span></button>
+        <button data-t="redo" title="Redo (Ctrl+Y)"><span class="hide-s">Redo</span><span class="only-s">&#8631;</span></button>
+        <button data-t="del" title="Delete selected (Del)">Delete</button>
+        <span class="sep"></span>
+        <button data-t="zout" title="Zoom out">&minus;</button>
+        <button data-t="zin" title="Zoom in">+</button>
+        <button data-t="fit" title="Fit to screen">Fit</button>
+        <span class="sep"></span>
+        <button data-t="svg" title="Save the sheet as a picture (SVG) for printing">Pic<span class="hide-s">ture</span></button>
+      </div>
+      <div id="stepper" class="hidden"><span>Paused</span><button data-st="0.02" title="Move time on by 20 ms (the . key)">+20 ms</button><button data-st="0.1">+100 ms</button><button data-st="run" title="Back to normal speed">Run</button></div>
+      <div id="scene" class="hidden"></div>
+      <div id="opanel" class="hidden"></div>
+      <div id="toasts"></div>
+    </section>
+    <aside id="coach">
+      <button id="coach-peek" title="Task, tests and the selected part"><i></i><span id="peek-t"></span><b></b></button>
+      <div id="coach-main"></div>
+      <div id="scope" class="hidden"><div class="scope-h"><h4>Signal recorder</h4><button class="link" id="scope-tg">hide</button></div><canvas></canvas><div id="seqlog"></div><div id="airuse"></div></div>
+      <div id="insp"></div>
+    </aside>
+  </div>
+</div>
+
+<div id="modal" class="hidden"></div>
+
+<script src="js/components.js?v=18"></script>
+<script src="js/engine.js?v=18"></script>
+<script src="js/lessons.js?v=18"></script>
+<script src="js/app.js?v=18"></script>
+</body>
+</html>
