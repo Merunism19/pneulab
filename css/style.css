@@ -354,7 +354,7 @@ body { overscroll-behavior: none; }
 .sw::after { content: ""; position: absolute; left: 3px; top: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--panel); box-shadow: 0 1px 3px rgba(0, 0, 0, .3); transition: transform .15s; }
 .sw.on { background: var(--ok); } .sw.on::after { transform: translateX(18px); }
 .about { font-size: 13.5px !important; color: var(--muted); overflow-wrap: anywhere; } .about a, .getapp a { color: var(--accent); font-weight: 600; }
-.getapp { margin: 16px 0 0; font-size: 14px !important; color: var(--muted); max-width: 46ch; }
+.hero .getapp { margin: 16px 0 0; font-size: 14px; color: var(--muted); max-width: 46ch; }
 .btn.danger { border-color: var(--hot); color: var(--hot); }
 .lib-new { display: flex; gap: 8px; align-items: center; margin: 4px 0 12px; }
 .lib-new input { flex: 1; min-width: 0; }
