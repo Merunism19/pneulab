@@ -367,6 +367,36 @@ body { overscroll-behavior: none; }
 .lib-m .btn { padding: 4px 10px; font-size: 13px; }
 .lib-empty { color: var(--muted); }
 
+/* ---------- exam practice ---------- */
+.card.sand.prac { border-style: solid; border-color: var(--air); background: color-mix(in srgb, var(--air) 7%, transparent); }
+.tpcs { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; margin: 12px 0 16px; }
+.tpc { position: relative; overflow: hidden; text-align: left; border: 1px solid var(--line); background: var(--sheet); border-radius: 10px; padding: 8px 10px 11px; display: flex; flex-direction: column; gap: 1px; }
+.tpc b { font: 700 14px var(--display); } .tpc span { font-size: 12px; color: var(--muted); }
+.tpc i { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--line); } .tpc i.g { background: var(--ok); } .tpc i.m { background: var(--warn); } .tpc i.b { background: var(--hot); }
+.tpc.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--sheet)); }
+.pmodes { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.pmode { text-align: left; border: 1px solid var(--line); background: var(--panel); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.pmode:hover:not(:disabled) { border-color: var(--ink); } .pmode b { font: 700 16px var(--display); } .pmode span { font-size: 13px; color: var(--muted); line-height: 1.4; } .pmode:disabled { opacity: .5; cursor: default; }
+.mocks { display: flex; gap: 8px; flex-wrap: wrap; } .mocks span { display: flex; flex-direction: column; align-items: center; border: 1px solid var(--line); border-radius: 9px; padding: 4px 10px; font: 600 11px var(--mono); color: var(--muted); }
+.mocks span b { font-size: 15px; color: var(--hot); } .mocks span.pass b { color: var(--ok); }
+.qfig { display: flex; justify-content: center; background: var(--sheet); border: 1px solid var(--line); border-radius: 12px; padding: 10px; margin: 2px 0 12px; }
+.qfig .sym-fig { width: 170px; height: 120px; } .qfig.circ svg { width: 100%; max-height: 320px; }
+.quiz .opts button.chosen { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--sheet)); }
+.dots { flex-wrap: wrap; } .dots i.done { background: var(--muted); }
+.clock { font-variant-numeric: tabular-nums; } .clock.late { color: var(--hot); }
+ul.missed { list-style: none; padding: 0 !important; } ul.missed li { border-left: 3px solid var(--hot); padding: 6px 10px; margin: 8px 0; background: color-mix(in srgb, var(--hot) 6%, var(--sheet)); border-radius: 0 8px 8px 0; display: flex; flex-direction: column; gap: 3px; font-size: 14px; }
+ul.missed span { color: var(--muted); font-size: 13.5px; }
+.flash { min-height: 170px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 10px; }
+.flash .fans b { font: 700 21px var(--display); } .flash .fans p { color: var(--muted); font-size: 14.5px; max-width: 52ch; margin: 6px auto 0; } .fhint { color: var(--muted); }
+.gl { padding: 9px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 210px 1fr; gap: 12px; } .gl b { font: 700 14.5px var(--display); } .gl span { font-size: 14px; color: var(--muted); }
+.calc { display: grid; grid-template-columns: 290px 1fr; gap: 18px; }
+.cin label { display: flex; flex-direction: column; gap: 3px; margin-bottom: 12px; font-size: 13px; color: var(--muted); }
+.cin select, .cin input { width: 100%; accent-color: var(--accent); } .cin select { font: inherit; padding: 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--sheet); color: var(--ink); }
+.cin output { font: 600 12.5px var(--mono); color: var(--ink); }
+.cres { border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; margin-bottom: 8px; background: var(--sheet); display: flex; flex-direction: column; gap: 1px; }
+.cres span { font-size: 12.5px; color: var(--muted); } .cres b { font: 700 22px var(--display); } .cres i { font: 12px/1.4 var(--mono); font-style: normal; color: var(--muted); } .cres.bad b { color: var(--hot); }
+@media (max-width: 900px) { .calc { grid-template-columns: 1fr; } .gl { grid-template-columns: 1fr; gap: 2px; } .tpcs { grid-template-columns: 1fr 1fr; } }
+
 /* ---------- small screens: a phone, or a narrow window ---------- */
 @media (max-width: 900px) {
   .home-wrap { padding: 14px 14px 70px; }

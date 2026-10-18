@@ -1,6 +1,6 @@
 // Headless check: every lesson's reference solution must pass its own test bench,
 // and every unsolved starting circuit must fail it.
-require('../js/components.js'); require('../js/engine.js'); require('../js/lessons.js');
+require('../js/components.js'); require('../js/engine.js'); require('../js/lessons.js'); require('../js/practice.js');
 const EP = globalThis.EP;
 let bad = 0;
 for (const L of EP.lessons) {
@@ -99,6 +99,26 @@ const chk = (name, ok) => { if (!ok) bad++; console.log(ok ? '  ok  ' : ' FAIL '
   chk('reed switches on the barrel: one tap, out and back', rc.check(['ret', '1A']) && rc.check(['cycles', '1A', 1]));
   const L = EP.lessons.find(l => l.id === 'sorter');
   chk('sorter: a blind inductive sensor fails the tests', !EP.evalLesson(L.solution(), L, {blind: {B1: true}}).pass);
+}
+// exam practice: every generated question is well formed, and every circuit it draws behaves as its answer says
+{
+  const P = EP.practice; let ok = true, sims = 0;
+  for (let i = 0; i < 150; i++) for (const g of P.gens) {
+    const q = g();
+    if (!q.q || !q.why || q.o.length < 2 || new Set(q.o).size !== q.o.length || q.a !== 0 || !P.topics.some(t => t.id === q.topic)) ok = false;
+    if (q.tree) {
+      const labs = ['S1', 'S2', 'S3'].filter(l => q.circ.comps.some(c => c.label === l));
+      for (let m = 0; m < (1 << labs.length); m++) { const on = {}; labs.forEach((l, k) => { on[l] = !!((m >> k) & 1); }); sims++; if (P.simY1(q.circ, on) !== P.evalT(q.tree, on)) ok = false; }
+      if (q.on && q.o[0].startsWith('Yes') !== P.evalT(q.tree, q.on)) ok = false;
+    }
+  }
+  chk('practice: 1500 generated questions well formed, ' + sims + ' circuit readings agree with the simulator', ok);
+  const w = P.allWritten();
+  chk('practice: ' + w.length + ' written questions, each with an answer, a topic and a reason', w.every(q => q.o[q.a] && q.why && P.topics.some(t => t.id === q.topic)) && new Set(w.map(q => q.id)).size === w.length);
+  const set = P.make(['calc'], 10, {});
+  chk('practice: a round on one topic stays on that topic', set.length === 10 && set.every(q => q.topic === 'calc'));
+  const L = EP.lessons.find(l => l.id === 'proj1'), c = L.solution(); c.comps.find(x => x.id === 'B1').type = 's_ind';
+  chk('proj1: an inductive sensor cannot see the plastic housings, so it fails', !EP.evalLesson(c, L).pass);
 }
 // physics sanity
 const sim = new EP.Sim(EP.solutions.direct()); sim.power(true); sim.run(0.6);

@@ -324,6 +324,29 @@ sol.reedcyl = function () {                  // out and back by itself, with ree
   b.add('pb_no', 'S1', f.c(0), f.r(0)).add('reed_no', 'B1', f.c(0), f.r(1)).add('sol', 'Y1', f.c(0), f.r(2)).add('reed_no', 'B2', f.c(1), f.r(0)).add('sol', 'Y2', f.c(1), f.r(2));
   return b.w('PSU.pos', 'S1.3', 'S1.4', 'B1.3', 'B1.4', 'Y1.a', 'Y1.b', 'PSU.neg', 'PSU.pos', 'B2.3', 'B2.4', 'Y2.a', 'Y2.b', 'PSU.neg').circ;
 };
+/* ----- exam projects ----- */
+sol.clampCheck = function () {               // clamp only if a part is there; a lamp for "clamp closed"
+  const b = rig(B(), {valve: 'v52d', ext: 'S3'}), f = frame(b, 4, 3);
+  b.add('s_cap', 'B1', f.c(0), f.r(0)).add('pb_no', 'S1', f.c(1), f.r(1)).add('sol', 'Y1', f.c(1), f.r(2))
+    .add('pb_no', 'S2', f.c(2), f.r(0)).add('sol', 'Y2', f.c(2), f.r(2)).add('ls_no', 'S3', f.c(3), f.r(0)).add('lamp', 'H1', f.c(3), f.r(2));
+  return b.w('PSU.pos', 'B1.BN', 'B1.BU', 'PSU.neg', 'B1.BK', 'S1.3', 'S1.4', 'Y1.a', 'Y1.b', 'PSU.neg',
+    'PSU.pos', 'S2.3', 'S2.4', 'Y2.a', 'Y2.b', 'PSU.neg', 'PSU.pos', 'S3.3', 'S3.4', 'H1.a', 'H1.b', 'PSU.neg').circ;
+};
+sol.doorTwo = function () {                  // two OPEN buttons, one CLOSE button that wins, a relay that remembers
+  const b = rig(B()), f = frame(b, 5, 3);
+  b.add('pb_no', 'S1', f.c(0), f.r(0)).add('pb_no', 'S3', f.c(1), f.r(0)).add('k_no', 'K1a', f.c(2), f.r(0), {label: 'K1'})
+    .add('pb_nc', 'S2', f.c(0), f.r(1)).add('relay', 'K1', f.c(0), f.r(2))
+    .add('k_no', 'K1b', f.c(3), f.r(0), {label: 'K1'}).add('sol', 'Y1', f.c(3), f.r(2)).add('k_no', 'K1c', f.c(4), f.r(0), {label: 'K1'}).add('lamp', 'H1', f.c(4), f.r(2));
+  return b.w('PSU.pos', 'S1.3', 'PSU.pos', 'S3.3', 'PSU.pos', 'K1a.3', 'S1.4', 'S2.1', 'S3.4', 'S2.1', 'K1a.4', 'S2.1', 'S2.2', 'K1.A1', 'K1.A2', 'PSU.neg',
+    'PSU.pos', 'K1b.3', 'K1b.4', 'Y1.a', 'Y1.b', 'PSU.neg', 'PSU.pos', 'K1c.3', 'K1c.4', 'H1.a', 'H1.b', 'PSU.neg').circ;
+};
+sol.batch = function () {                    // every third box: push the batch on, come back, count again
+  const b = rig(B(), {ext: 'S3'}), f = frame(b, 4, 3);
+  b.add('s_opt', 'B1', f.c(0), f.r(0)).add('counter', 'C1', f.c(1), f.r(1), {preset: 3}).add('k_no', 'C1a', f.c(2), f.r(0), {label: 'C1'}).add('sol', 'Y1', f.c(2), f.r(2))
+    .add('ls_no', 'S3', f.c(3), f.r(0)).add('counter_r', 'C1r', f.c(3), f.r(2), {label: 'C1'});
+  return b.w('PSU.pos', 'B1.BN', 'B1.BU', 'PSU.neg', 'B1.BK', 'C1.A1', 'C1.A2', 'PSU.neg', 'PSU.pos', 'C1a.3', 'C1a.4', 'Y1.a', 'Y1.b', 'PSU.neg',
+    'PSU.pos', 'S3.3', 'S3.4', 'C1r.R1', 'C1r.R2', 'PSU.neg').circ;
+};
 EP.solutions = sol;
 /* make every part editable (sandbox examples, repair jobs) */
 const loose = c => { c.comps.forEach(x => { x.fixed = false; }); return c; };
@@ -361,7 +384,8 @@ EP.chapters = [
   {title: 'Operating modes and safety', blurb: 'One cycle or many, a red button that always wins, two honest hands, and stopping half-way.'},
   {title: 'Pressure and sequences', blurb: 'Sensing force through air pressure, and two cylinders working in step.'},
   {title: 'Repair shop', blurb: 'Four machines came back broken. Find the fault, fix it, prove it.'},
-  {title: 'Sensors', blurb: 'Switches with no moving parts: what each kind can see, and how three wires make them work.'}
+  {title: 'Sensors', blurb: 'Switches with no moving parts: what each kind can see, and how three wires make them work.'},
+  {title: 'Exam projects', blurb: 'Practical tasks set the way an exam sets them: a specification, a bench, and no step-by-step help.'}
 ];
 
 EP.lessons = [
@@ -1226,6 +1250,70 @@ EP.lessons = [
   ],
   learned: ['Two different sensors on one spot can tell materials apart.', 'A sensor has one output. Feed a relay with it and you get as many contacts as you need, normally closed ones included.', 'Every three-wire sensor needs brown on +24 V and blue on 0 V, however many of them there are.'],
   quiz: [{q: 'You need the signal “no metal here” from an inductive sensor. How do you get it?', o: ['Swap its brown and blue wires', 'Let it drive a relay and use a normally-closed relay contact', 'It cannot be done'], a: 1, why: 'The sensor only says “metal here”. A relay driven by it has normally-closed contacts, which conduct exactly when the sensor is not switched.'}]
+},
+{
+  id: 'proj1', ch: 10, kind: 'build', title: 'Project — the gluing clamp',
+  brief: 'Plastic housings are clamped for gluing. Tap <b>S1</b> to close clamp 1A, but only while sensor <b>B1</b> sees a housing. Tap <b>S2</b> to open it. Lamp <b>H1</b> shows “clamp closed”, using limit switch <b>S3</b> at the front end.',
+  solution: sol.clampCheck, start: bare, palette: ['pb_no', 'pb_nc', 'sw_no', 'sw_nc', 'ls_no', 'ls_nc', 'reed_no', 's_ind', 's_cap', 's_opt', 'relay', 'k_no', 'k_nc', 'timer', 'timer_off', 'counter', 'counter_r', 'sol', 'lamp'],
+  intro: [{h: 'Specification', html: `<ul><li>Cylinder <b>1A</b> with a double-solenoid valve: <b>Y1</b> closes the clamp, <b>Y2</b> opens it. Air is already piped.</li>
+    <li><b>S1</b> (pushbutton): close the clamp, but only if a housing is in place.</li><li><b>B1</b> (sensor): “housing in place”. The housings are <b>plastic</b>, so choose the kind of sensor that can see them.</li>
+    <li><b>S2</b> (pushbutton): open the clamp.</li><li><b>H1</b> (lamp): lit while the clamp is fully closed. Limit switch <b>S3</b> is already marked at the front end of 1A.</li></ul><p><b>Exam habit:</b> before you place a single part, write down the inputs, the outputs and what must happen, then sketch the circuit. Every part you use needs the label the specification gives it.</p>`}],
+  hints: ['The sensor needs its supply first: brown to +24 V, blue to 0 V. Its black output then acts as one more switch in the S1 branch.', 'Y1 = B1 AND S1: +24 V → (sensor output) → S1 → Y1 → 0 V. Y2 = S2. H1 = S3.', 'If nothing happens with a part in place, check the kind of sensor: an inductive one does not see plastic.'],
+  tests: [
+    {kind: 'seq', title: 'Clamp with part check', steps: [
+      {say: 'No housing: tap S1 — the clamp stays open', show: false, tap: ['S1'], run: 1.5, expect: [['ret', '1A'], ['lamp', 'H1', false]], why: 'With no housing in front of B1, S1 must do nothing.'},
+      {say: 'A plastic housing is put in place, tap S1 — the clamp closes and H1 lights', mat: 'plastic', show: true, tap: ['S1'], run: 2, expect: [['ext', '1A'], ['lamp', 'H1', true]], why: 'With a housing in place S1 must close the clamp, and H1 must light at the front end. If nothing moved, the sensor may not see plastic, or it has no supply.'},
+      {say: 'The clamp stays closed while the glue sets', run: 1, expect: [['ext', '1A']], why: 'The clamp opened by itself.'},
+      {say: 'Tap S2 — the clamp opens and H1 goes out', tap: ['S2'], run: 2, expect: [['ret', '1A'], ['lamp', 'H1', false]], why: 'S2 must open the clamp through Y2, and the lamp must go out.'}
+    ]}
+  ],
+  learned: ['A sensor output can be one contact in a chain, like any switch.', 'Read the specification for the material: it decides the kind of sensor.', 'A double-solenoid valve keeps the clamp closed with no signal at all.'],
+  quiz: [{q: 'The clamp of this project must also work with aluminium housings. Which sensor would see both plastic and aluminium?', o: ['Capacitive', 'Inductive', 'Reed switch'], a: 0, why: 'Capacitive sensors react to almost any material. Inductive ones see the aluminium but not the plastic, and a reed switch needs a magnet.'}]
+},
+{
+  id: 'proj2', ch: 10, kind: 'build', title: 'Project — the automatic door',
+  brief: 'A door (cylinder 1A, spring-return valve) opens from <b>S1</b> inside or <b>S3</b> outside and stays open after the button is released. <b>S2</b> closes it and must win when it is held. Lamp <b>H1</b> is lit while the door is commanded open. Use relay <b>K1</b>.',
+  solution: sol.doorTwo, start: bare, palette: ['pb_no', 'pb_nc', 'sw_no', 'sw_nc', 'ls_no', 'ls_nc', 'reed_no', 's_ind', 's_cap', 's_opt', 'relay', 'k_no', 'k_nc', 'timer', 'timer_off', 'counter', 'counter_r', 'sol', 'lamp'],
+  intro: [{h: 'Specification', html: `<ul><li>Cylinder <b>1A</b>, 5/2 valve with spring return, solenoid <b>Y1</b>: Y1 on = door open.</li>
+    <li><b>S1</b> and <b>S3</b> (pushbuttons): open. One tap is enough; the door stays open.</li><li><b>S2</b> (pushbutton): close. Pressed together with an OPEN button, CLOSE wins.</li>
+    <li><b>H1</b> (lamp): lit while the door is commanded open.</li><li>Use relay <b>K1</b> as the memory.</li></ul><p><b>Exam habit:</b> before you place a single part, write down the inputs, the outputs and what must happen, then sketch the circuit. Every part you use needs the label the specification gives it.</p>`}],
+  hints: ['A spring-return valve forgets, so the memory has to be a latching relay: K1 holds itself through one of its own normally-open contacts.', 'The two OPEN buttons and the holding contact sit side by side in parallel. CLOSE must win, so its normally-closed contact goes in series after all three: dominant OFF.', 'Y1 and H1 each get their own normally-open K1 contact.'],
+  tests: [
+    {kind: 'seq', title: 'Open, close, and CLOSE wins', steps: [
+      {say: 'Tap S1 — the door opens and H1 lights', tap: ['S1'], run: 1.5, expect: [['ext', '1A'], ['lamp', 'H1', true]], why: 'One tap on S1 must open the door and keep it open, with H1 lit.'},
+      {say: 'Tap S2 — the door closes and H1 goes out', tap: ['S2'], run: 1.5, expect: [['ret', '1A'], ['lamp', 'H1', false]], why: 'S2 must break the latch.'},
+      {say: 'Tap S3 — the door opens from outside too', tap: ['S3'], run: 1.5, expect: [['ext', '1A'], ['lamp', 'H1', true]], why: 'S3 must open the door just like S1.'},
+      {say: 'Hold S2 and tap S3 — the door closes and stays closed', press: ['S2'], tap: ['S3'], run: 1.5, expect: [['ret', '1A'], ['lamp', 'H1', false]], why: 'With S2 held, nothing may open the door: CLOSE must win (dominant OFF).'},
+      {say: 'Let go of S2 — the door stays closed', release: ['S2'], run: 1, expect: [['ret', '1A']], why: 'The door opened by itself when S2 was released.'}
+    ]},
+    {kind: 'rule', title: 'A relay as the memory', why: 'The specification asks for relay K1 as the memory.', check: q => q.count('relay') >= 1}
+  ],
+  learned: ['Several START buttons go in parallel with the holding contact; the STOP contact goes in series after them all.', 'With a spring-return valve, the relay latch is the only memory in the machine.', 'Each load gets its own relay contact.'],
+  quiz: [{q: 'The specification changes: OPEN must win when both are pressed. What do you move?', o: ['The STOP contact, so it is in series with the holding contact only', 'The lamp', 'Nothing, it already works that way'], a: 0, why: 'In a dominant-ON latch the START paths reach the coil directly, and STOP only breaks the holding path.'}]
+},
+{
+  id: 'proj3', ch: 10, kind: 'build', title: 'Project — the batch pusher',
+  brief: 'Boxes pass a light barrier <b>B1</b>. After every third box, pusher 1A shoves the batch on, comes back by itself when it reaches limit switch <b>S3</b> at the front end, and counting starts again from zero. Use counter <b>C1</b>.',
+  solution: sol.batch, start: bare, palette: ['pb_no', 'pb_nc', 'sw_no', 'sw_nc', 'ls_no', 'ls_nc', 'reed_no', 's_ind', 's_cap', 's_opt', 'relay', 'k_no', 'k_nc', 'timer', 'timer_off', 'counter', 'counter_r', 'sol', 'lamp'],
+  intro: [{h: 'Specification', html: `<ul><li>Cylinder <b>1A</b>, 5/2 valve with spring return, solenoid <b>Y1</b>. Limit switch <b>S3</b> is marked at the front end.</li>
+    <li><b>B1</b> (sensor): counts the boxes. The boxes are cardboard, so an inductive sensor will not do.</li><li><b>C1</b> (preset counter, preset 3): counts B1's pulses.</li>
+    <li>When the count is reached, 1A extends. At S3 the counter is reset, so 1A returns and counting starts again.</li></ul>
+    <p>Test it with the <b>Workpiece</b> button: each press is one box going past.</p><p><b>Exam habit:</b> before you place a single part, write down the inputs, the outputs and what must happen, then sketch the circuit. Every part you use needs the label the specification gives it.</p>`}],
+  hints: ['B1 black → counter coil C1 (A1) → 0 V. Every box is one rising edge, and the counter counts edges.', 'A normally-open contact labelled C1 feeds Y1. It closes when the count reaches 3.', 'S3 → reset coil labelled C1 → 0 V. When the pusher reaches S3, the count goes to zero, the C1 contact opens and the spring brings the valve, and the pusher, back.'],
+  tests: [
+    {kind: 'seq', title: 'Three boxes, one push', steps: [
+      {say: 'Box 1 passes — nothing moves', mat: 'plastic', show: true, run: 0.3, expect: [], why: ''},
+      {say: 'Box 1 has gone', show: false, run: 0.3, expect: [['ret', '1A'], ['count', 'C1', 1]], why: 'The first box must be counted (C1 = 1) and the pusher must stay back. Check that B1 can see the boxes and feeds counter C1.'},
+      {say: 'Box 2', show: true, run: 0.3, expect: [], why: ''},
+      {say: 'Box 2 has gone', show: false, run: 0.3, expect: [['ret', '1A'], ['count', 'C1', 2]], why: 'The second box must be counted and the pusher must still stay back.'},
+      {say: 'Box 3 — the pusher shoves the batch, returns at S3, and the count starts again', show: true, run: 0.3, expect: [], why: ''},
+      {say: 'Box 3 has gone', show: false, run: 3, expect: [['cycles', '1A', 1], ['ret', '1A'], ['count', 'C1', 0]], why: 'After the third box 1A must extend once, come back on its own, and the counter must be at zero again. If it stayed out, S3 does not reset C1.'},
+      {say: 'Box 4 starts a new batch', show: true, run: 0.3, expect: [], why: ''},
+      {say: 'Box 4 has gone', show: false, run: 0.3, expect: [['ret', '1A'], ['count', 'C1', 1]], why: 'The next box must count as the first of a new batch.'}
+    ]}
+  ],
+  learned: ['A sensor can feed a counter directly: every new detection is one count.', 'The machine resets its own counter, from the limit switch at the end of the push.', 'Because the reset also opens the C1 contact, the spring-return valve brings the pusher back by itself.'],
+  quiz: [{q: 'In this project, what would happen if S3 were missing?', o: ['After three boxes the pusher would extend and stay out', 'The pusher would extend after every box', 'Nothing would ever move'], a: 0, why: 'Without the reset the count stays at 3, the C1 contact stays closed and Y1 stays energised.'}]
 }
 ];
 
@@ -1241,6 +1329,7 @@ EP.examples = [
 EP.examples.push(['Single cycle / continuous', sol.modes], ['Emergency stop', sol.estop]);
 EP.examples.push(['Off-delay timer', sol.offdelay], ['Two-hand safety start', sol.twohand], ['Jog with a 5/3 valve', sol.jog], ['Sequence A+ A− B+ B− (cascade)', sol.cascade2]);
 
+EP.examples.push(['Gluing clamp with part check', sol.clampCheck], ['Door: two OPEN buttons, CLOSE wins', sol.doorTwo], ['Batch pusher with counter', sol.batch]);
 EP.examples.push(['Proximity sensor, three wires', sol.prox], ['Sensor test bench', sol.senses], ['Sorting station', sol.sorter], ['Reed switches on the cylinder', sol.reedcyl]);
 
 /* ---------- fault hunt: a healthy machine with one invisible defect ---------- */

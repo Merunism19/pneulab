@@ -1,9 +1,9 @@
 /* PneuLab offline copy.
    When the page is served from a web address, this worker keeps a copy of every file, so the workshop
    still opens with no connection. Online it always asks the network first, so a new version shows at once. */
-const CACHE = 'pneulab-1';
+const CACHE = 'pneulab-2';
 const FILES = ['./', 'index.html', 'view3d.html', 'manifest.webmanifest', 'css/style.css',
-  'js/components.js', 'js/engine.js', 'js/lessons.js', 'js/app.js', 'js/gl3d.js', 'js/view3d.js',
+  'js/components.js', 'js/engine.js', 'js/lessons.js', 'js/practice.js', 'js/app.js', 'js/gl3d.js', 'js/view3d.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png'];
 
 self.addEventListener('install', e => {

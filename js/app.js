@@ -183,7 +183,7 @@ function showHome() {
   let h = `<div class="home-wrap"><section class="hero"><div>
     <div class="kick">PneuLab · electro-pneumatics workshop</div>
     <h1>Build machines that run on <em>air</em> and obey <em>electricity</em>.</h1>
-    <p>Wire real control circuits, switch the bench on, and watch current and compressed air do exactly what the laws of physics say they should. ${total} lessons, from your first pushbutton to timers, counters, safety circuits, two-cylinder sequences, a repair shop and proximity sensors. The 3D button shows whatever you build as real hardware.</p>
+    <p>Wire real control circuits, switch the bench on, and watch current and compressed air do exactly what the laws of physics say they should. Then practise for your exam. ${total} lessons, from your first pushbutton to timers, counters, safety circuits, two-cylinder sequences, a repair shop and proximity sensors. The 3D button shows whatever you build as real hardware.</p>
     <div class="hero-cta">
       <button class="btn primary big" data-go="${next ? next.id : 'sandbox'}">${!done ? 'Start lesson 1' : next ? 'Continue: ' + esc(next.title) : 'Open the sandbox'}</button>
       <button class="btn big" data-go="sandbox">Sandbox</button>
@@ -205,7 +205,8 @@ function showHome() {
     h += '</div></section>';
   });
   h += `<section class="chap"><div class="chap-h"><span class="n">FREE PLAY</span><h2>Sandbox and practice</h2><span>Build anything you like, let the bench set you a fresh puzzle, or sit the exam.</span></div>
-    <div class="cards"><button class="card sand" data-go="drill"><div class="top"><span>Endless practice</span><span class="chip">random</span></div><h3>Logic drill</h3><div class="stars" style="color:var(--muted);font-size:13px;letter-spacing:0">A new truth table every time. Solved: ${S.drill.solved} · first-try streak: ${S.drill.streak} (best ${S.drill.best})</div></button>
+    <div class="cards"><button class="card sand prac" data-go="practice"><div class="top"><span>For the exam</span><span class="chip">${PS.mocks.length ? 'last mock ' + PS.mocks[0].s + '/' + PS.mocks[0].n : 'new'}</span></div><h3>Exam practice</h3><div class="stars" style="color:var(--muted);font-size:13px;letter-spacing:0">Quick rounds by topic, a timed mock exam, the questions you got wrong, flashcards, a glossary and a calculator. ${EP.practice.allWritten().length} written questions and endless generated ones.</div></button>
+    <button class="card sand" data-go="drill"><div class="top"><span>Endless practice</span><span class="chip">random</span></div><h3>Logic drill</h3><div class="stars" style="color:var(--muted);font-size:13px;letter-spacing:0">A new truth table every time. Solved: ${S.drill.solved} · first-try streak: ${S.drill.streak} (best ${S.drill.best})</div></button>
     <button class="card sand" data-go="hunt"><div class="top"><span>Endless practice</span><span class="chip">random</span></div><h3>Fault hunt</h3><div class="stars" style="color:var(--muted);font-size:13px;letter-spacing:0">A working machine with one hidden fault. Measure, then accuse. Found: ${S.hunt.solved} · clean streak: ${S.hunt.streak} (best ${S.hunt.best})</div></button>
     <button class="card sand" data-go="exam"><div class="top"><span>When you feel ready</span><span class="chip">${S.exam.passed ? 'passed' : 'exam'}</span></div><h3>Final exam</h3><div class="stars" style="color:var(--muted);font-size:13px;letter-spacing:0">Ten questions from the whole course, a different paper every time. Eight right earns a certificate you can print.${S.exam.best ? ' Best so far: ' + S.exam.best + '/10' : ''}</div></button>
     <button class="card sand" data-go="sandbox"><div class="top"><span>Open bench</span></div><h3>Build anything</h3><div class="stars" style="color:var(--muted);font-size:13px;letter-spacing:0">Your sheet is saved automatically, and you can send it to someone.</div></button>
@@ -225,7 +226,7 @@ $('#home').addEventListener('click', e => {
   const b = e.target.closest('[data-go]'); if (!b) return;
   Snd.ac();
   const g = b.dataset.go;
-  if (g === 'book') handbook(); else if (g === 'set') settings(); else if (g === 'lib') library(); else if (g === 'sandbox') startSandbox(); else if (g === 'drill') startDrill(); else if (g === 'hunt') startHunt(); else if (g === 'exam') startExam(); else startLesson(g);
+  if (g === 'book') handbook(); else if (g === 'practice') practiceHub(); else if (g === 'set') settings(); else if (g === 'lib') library(); else if (g === 'sandbox') startSandbox(); else if (g === 'drill') startDrill(); else if (g === 'hunt') startHunt(); else if (g === 'exam') startExam(); else startLesson(g);
 });
 
 /* ---------- entering the workspace ---------- */
@@ -1170,6 +1171,178 @@ function complete() {
   });
 }
 
+/* ---------- exam practice: rounds by topic, a timed mock exam, weak spots, flashcards ----------
+   The questions come from js/practice.js. What you got right is kept per topic, and every written question
+   sits in a box: 0 means it was answered wrong last time and comes back under "Weak spots". */
+const PR = EP.practice, PT = id => (PR.topics.find(t => t.id === id) || {name: id}).name;
+const PS = (() => { const v = store.get('pstat', null); return v && typeof v === 'object' && v.topics && v.boxes && Array.isArray(v.mocks) ? v : {topics: {}, boxes: {}, mocks: []}; })();
+const psave = () => store.set('pstat', PS);
+const PSel = new Set((store.get('ptopics', []) || []).filter(t => PR.topics.some(x => x.id === t)));
+const MOCK_N = 20, MOCK_MIN = 30;
+let PQ = null, FC = null;
+const pct = id => { const t = PS.topics[id]; return t && t[1] ? Math.round(100 * t[0] / t[1]) : null; };
+function practiceHub() {
+  PQ = null;
+  const weak = PR.weak(PS.boxes).length, last = PS.mocks[0];
+  const tp = PR.topics.map(t => {
+    const v = pct(t.id), n = PS.topics[t.id] ? PS.topics[t.id][1] : 0;
+    return `<button class="tpc${PSel.has(t.id) ? ' on' : ''}" data-act="tp" data-t="${t.id}"><b>${esc(t.name)}</b><span>${v == null ? 'not tried yet' : v + ' % right · ' + n + ' answered'}</span><i style="width:${v || 0}%" class="${v == null ? '' : v >= 80 ? 'g' : v >= 50 ? 'm' : 'b'}"></i></button>`;
+  }).join('');
+  openModal(`<div class="dlg wide"><button class="dlg-x" data-act="close">×</button><div class="dlg-h"><div class="kick">For the exam</div><h2>Exam practice</h2></div>
+    <div class="dlg-b"><p>Tap topics to practise just those, or leave them all off for everything. There are ${PR.allWritten().length} written questions, and generated ones that never run out: symbols, terminal numbers, forces, air consumption and circuits to read.</p>
+      <div class="tpcs">${tp}</div>
+      <div class="pmodes">
+        <button class="pmode" data-act="quick"><b>Quick round</b><span>10 questions from the topics you picked, each one explained as soon as you answer.</span></button>
+        <button class="pmode" data-act="mock"><b>Mock exam</b><span>${MOCK_N} questions from every topic in ${MOCK_MIN} minutes, marked at the end like the real thing.${last ? ' Last time: ' + last.s + '/' + last.n + '.' : ''}</span></button>
+        <button class="pmode" data-act="weak"${weak ? '' : ' disabled'}><b>Weak spots</b><span>${weak ? weak + ' question' + (weak === 1 ? '' : 's') + ' you got wrong. Each one stays here until you get it right.' : 'Questions you get wrong collect here.'}</span></button>
+        <button class="pmode" data-act="cards"><b>Flashcards</b><span>Every symbol and ${PR.glossary.length} terms. The cards you miss come round first.</span></button>
+        <button class="pmode" data-act="calc"><b>Calculator</b><span>Cylinder force and air consumption, with the working written out.</span></button>
+        <button class="pmode" data-act="gloss"><b>Glossary</b><span>${PR.glossary.length} terms from A to Z, searchable.</span></button>
+      </div>
+      ${PS.mocks.length ? `<div class="box"><h4>Your mock exams</h4><div class="mocks">${PS.mocks.slice(0, 8).map(m => `<span class="${m.s / m.n >= 0.7 ? 'pass' : ''}"><b>${m.s}/${m.n}</b>${new Date(m.t).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}</span>`).join('')}</div><p>70 % counts as a pass here.</p></div>` : ''}
+    </div></div>`, (act, b) => {
+    if (act === 'tp') { const t = b.dataset.t; if (PSel.has(t)) PSel.delete(t); else PSel.add(t); store.set('ptopics', [...PSel]); b.classList.toggle('on', PSel.has(t)); }
+    else if (act === 'quick') startQuiz('quick', PR.make([...PSel], 10, PS.boxes));
+    else if (act === 'mock') startQuiz('mock', PR.make(null, MOCK_N, null));
+    else if (act === 'weak') startQuiz('weak', PR.shuffle(PR.weak(PS.boxes)).slice(0, 10));
+    else if (act === 'cards') flashcards();
+    else if (act === 'calc') handbook('calc');
+    else if (act === 'gloss') handbook('gloss');
+  });
+}
+function startQuiz(mode, qs) {
+  if (!qs.length) { toast('There are no questions for that choice yet.'); return; }
+  PQ = {mode, i: 0, end: mode === 'mock' ? Date.now() + MOCK_MIN * 60000 : 0, done: false,
+    qs: qs.map(q => Object.assign({}, q, {order: PR.shuffle(q.o.map((_, i) => i)), pick: null}))};     // answers in a fresh order, so position is no help
+  showQ();
+}
+function record(q, ok) {
+  const t = PS.topics[q.topic] || (PS.topics[q.topic] = [0, 0]); t[1]++; if (ok) t[0]++;
+  if (q.id) PS.boxes[q.id] = ok ? Math.min(3, Math.max(0, PS.boxes[q.id] || 0) + 1) : 0;
+  psave();
+}
+/* a question may bring a symbol, or a circuit that is drawn here with the same painter as the sheet */
+function qFig(q) { return q.fig ? `<div class="qfig">${q.fig}</div>` : q.circ ? '<div class="qfig circ"><svg><g class="lw"></g><g class="lc"></g></svg></div>' : ''; }
+function drawQCirc(q) {
+  const svg = $('#modal .qfig.circ svg'); if (!svg || !q.circ) return;
+  const c = {comps: q.circ.comps.filter(x => D[x.type].cat === 'e'), wires: q.circ.wires.filter(w => w.k === 'e')}, b = bounds(c);
+  svg.setAttribute('viewBox', `${b[0] - 10} ${b[1] - 16} ${b[2] + 20} ${b[3] + 32}`);
+  new Painter(svg.querySelector('.lw'), svg.querySelector('.lc')).build(c, null);
+}
+function showQ() {
+  const q = PQ.qs[PQ.i], n = PQ.qs.length, mode = PQ.mode, mock = mode === 'mock';
+  openModal(`<div class="dlg"><button class="dlg-x" data-act="close" title="Stop">×</button>
+    <div class="dlg-h"><div class="kick">${{quick: 'Quick round', mock: 'Mock exam', weak: 'Weak spots'}[mode]} · ${PQ.i + 1} of ${n} · ${esc(PT(q.topic))}${mock ? ' · <span class="clock"></span>' : ''}</div><h2 class="exam-q">${esc(q.q)}</h2></div>
+    <div class="dlg-b">${qFig(q)}<div class="quiz exam"><div class="opts">${q.order.map(oi => `<button data-act="ans" data-o="${oi}" class="${q.pick === oi ? 'chosen' : ''}">${esc(q.o[oi])}</button>`).join('')}</div>
+      <p class="why hidden">${esc(q.why)}${q.from ? ` <i>From the lesson “${esc(q.from)}”.</i>` : ''}</p></div></div>
+    <div class="dlg-f"><div class="dots">${PQ.qs.map((x, j) => `<i class="${j === PQ.i ? 'on' : x.pick == null ? '' : mock ? 'done' : x.pick === x.a ? 'ok' : 'no'}"></i>`).join('')}</div>
+      <div class="row">${mock && PQ.i > 0 ? '<button class="btn" data-act="prev">Back</button>' : ''}<button class="btn primary" data-act="next" ${q.pick == null ? 'disabled' : ''}>${PQ.i === n - 1 ? (mock ? 'Hand it in' : 'See the result') : 'Next'}</button></div></div></div>`,
+  (act, b) => {
+    if (act === 'ans') {
+      if (!mock && q.pick != null) return;
+      q.pick = +b.dataset.o;
+      if (mock) { $$('#modal .opts button').forEach(x => x.classList.toggle('chosen', x === b)); $('#modal [data-act=next]').disabled = false; return; }   // marked at the end
+      const ok = q.pick === q.a; record(q, ok);
+      $$('#modal .opts button').forEach(x => { x.disabled = true; if (+x.dataset.o === q.a) x.classList.add('right'); });
+      if (ok) Snd.tick(); else { b.classList.add('wrong'); Snd.bad(); }
+      $('#modal .why').classList.remove('hidden'); $('#modal [data-act=next]').disabled = false;
+      const dot = $$('#modal .dots i')[PQ.i]; if (dot) dot.className = ok ? 'ok' : 'no';
+    } else if (act === 'next') { if (PQ.i < n - 1) { PQ.i++; showQ(); } else quizEnd(); }
+    else if (act === 'prev') { PQ.i--; showQ(); }
+  });
+  drawQCirc(q); quizClock();
+}
+function quizClock() {
+  if (!PQ || !PQ.end || PQ.done) return;
+  const el = $('#modal .clock'); if (!el) return;
+  const left = Math.max(0, PQ.end - Date.now()), txt = Math.floor(left / 60000) + ':' + String(Math.floor(left / 1000) % 60).padStart(2, '0') + ' left';
+  if (el.textContent !== txt) el.textContent = txt;
+  el.classList.toggle('late', left < 120000);
+  if (!left) { toast('Time is up. Your paper has been handed in.'); quizEnd(); }
+}
+function quizEnd() {
+  const mode = PQ.mode, mock = mode === 'mock', qs = PQ.qs; PQ.done = true;
+  if (mock) qs.forEach(q => record(q, q.pick === q.a));
+  const right = qs.filter(q => q.pick === q.a).length, n = qs.length, by = {};
+  for (const q of qs) { const t = by[q.topic] || (by[q.topic] = [0, 0]); t[1]++; if (q.pick === q.a) t[0]++; }
+  if (mock) { PS.mocks.unshift({t: Date.now(), s: right, n}); PS.mocks = PS.mocks.slice(0, 20); psave(); }
+  if (right / n >= 0.7) { Snd.win(); Hap.buzz([20, 60, 20]); }
+  if (mock && right / n >= 0.9) award('mock');
+  const rec = Object.keys(by).filter(t => by[t][0] / by[t][1] < 0.7).map(t => {
+    const tp = PR.topics.find(x => x.id === t), ls = tp ? EP.lessons.filter(l => tp.ch.includes(l.ch)) : [], L = ls.find(l => (S.prog[l.id] || 0) < 3) || ls[0];
+    return L ? `<button class="btn" data-act="lesson" data-id="${L.id}">${esc(PT(t))} → ${esc(L.title)}</button>` : '';
+  }).join('');
+  const wrong = qs.filter(q => q.pick !== q.a), r = right / n;
+  openModal(`<div class="dlg wide"><button class="dlg-x" data-act="close">×</button><div class="dlg-h"><div class="kick">${{quick: 'Quick round', mock: 'Mock exam', weak: 'Weak spots'}[mode]} · result</div>
+      <h2>${right} out of ${n} · ${r >= 0.9 ? 'excellent' : r >= 0.7 ? 'passed' : r >= 0.5 ? 'nearly there' : 'keep practising'}</h2></div>
+    <div class="dlg-b"><div class="stars-big">${r >= 0.7 ? '<b>★</b>' : '★'}</div>
+      <table class="tt"><thead><tr><th>topic</th><th>right</th></tr></thead><tbody>${Object.keys(by).map(t => `<tr class="${by[t][0] / by[t][1] < 0.7 ? 'no' : ''}"><td style="text-align:left">${esc(PT(t))}</td><td>${by[t][0]} / ${by[t][1]}</td></tr>`).join('')}</tbody></table>
+      ${rec ? `<p><b>Worth another look:</b></p><div class="row">${rec}</div>` : '<p>No weak topic in this round.</p>'}
+      ${wrong.length ? `<p style="margin-top:16px"><b>The ones you missed</b>${mode !== 'weak' ? ' — they wait for you under Weak spots' : ''}</p><ul class="missed">${wrong.map(q => `<li><b>${esc(q.q)}</b><span>${q.pick == null ? 'Not answered.' : 'You said: ' + esc(q.o[q.pick]) + '.'} Right: <b>${esc(q.o[q.a])}</b>.</span><span>${esc(q.why)}</span></li>`).join('')}</ul>` : ''}
+    </div>
+    <div class="dlg-f"><button class="btn" data-act="hub">Exam practice</button><div class="row"><button class="btn primary" data-act="again">${mock ? 'Another mock exam' : 'Another round'}</button></div></div></div>`,
+  (act, b) => {
+    if (act === 'hub') practiceHub();
+    else if (act === 'again') {
+      if (mock) startQuiz('mock', PR.make(null, MOCK_N, null));
+      else if (mode === 'weak') { const w = PR.weak(PS.boxes); if (w.length) startQuiz('weak', PR.shuffle(w).slice(0, 10)); else practiceHub(); }
+      else startQuiz('quick', PR.make([...PSel], 10, PS.boxes));
+    } else if (act === 'lesson') { closeModal(); startLesson(b.dataset.id); }
+  });
+}
+/* flashcards: say the answer, turn the card, be honest */
+function flashcards() {
+  const box = store.get('fbox', {}) || {}, deck = PR.shuffle(PR.deck()).sort((a, b) => (box[a.id] || 0) - (box[b.id] || 0));
+  FC = {cards: deck.slice(0, 12), i: 0, known: 0, box}; card(false);
+}
+function card(back) {
+  const c = FC.cards[FC.i], n = FC.cards.length;
+  openModal(`<div class="dlg"><button class="dlg-x" data-act="close">×</button><div class="dlg-h"><div class="kick">Flashcards · ${FC.i + 1} of ${n}</div><h2>${esc(c.front)}</h2></div>
+    <div class="dlg-b"><div class="flash">${c.fig ? `<div class="qfig">${c.fig}</div>` : ''}${back ? `<div class="fans"><b>${esc(c.back)}</b>${c.more ? `<p>${esc(c.more)}</p>` : ''}</div>` : '<p class="fhint">Say the answer to yourself, then turn the card over.</p>'}</div></div>
+    <div class="dlg-f"><div class="dots">${FC.cards.map((_, j) => `<i class="${j < FC.i ? 'done' : j === FC.i ? 'on' : ''}"></i>`).join('')}</div>
+      <div class="row">${back ? '<button class="btn" data-act="again">Not yet</button><button class="btn primary" data-act="got">I knew it</button>' : '<button class="btn primary" data-act="flip">Turn it over</button>'}</div></div></div>`,
+  act => {
+    if (act === 'flip') card(true);
+    else if (act === 'got' || act === 'again') {
+      FC.box[c.id] = act === 'got' ? Math.min(4, (FC.box[c.id] || 0) + 1) : 0; store.set('fbox', FC.box);
+      if (act === 'got') FC.known++; else if (FC.cards.length < 20) FC.cards.push(c);          // a missed card comes round again before the end
+      FC.i++;
+      if (FC.i < FC.cards.length) card(false);
+      else openModal(`<div class="dlg"><div class="dlg-h"><div class="kick">Flashcards</div><h2>${FC.known} of ${FC.cards.length} known</h2></div>
+        <div class="dlg-b"><p>The cards you did not know come first next time.</p></div>
+        <div class="dlg-f"><button class="btn" data-act="hub">Exam practice</button><div class="row"><button class="btn primary" data-act="more">Another 12 cards</button></div></div></div>`,
+        a => { if (a === 'hub') practiceHub(); else if (a === 'more') flashcards(); });
+    }
+  });
+}
+function glossHTML() {
+  return '<input class="share" data-gloss="1" type="search" placeholder="Search the glossary" autocomplete="off" style="margin-bottom:6px">' +
+    PR.glossary.slice().sort((a, b) => a[0].localeCompare(b[0])).map(g => `<div class="gl"><b>${esc(g[0])}</b><span>${esc(g[1])}</span></div>`).join('');
+}
+function calcHTML() {
+  const bores = [[16, 6], [20, 8], [25, 10], [32, 12], [40, 16], [50, 20], [63, 20], [80, 25], [100, 25]];
+  return `<div class="calc"><div class="cin">
+    <label>Bore<select data-c="bore">${bores.map(([a, r]) => `<option value="${a},${r}"${a === 32 ? ' selected' : ''}>${a} mm, rod ${r} mm</option>`).join('')}</select></label>
+    <label>Pressure <output></output><input type="range" data-c="p" min="1" max="10" step="0.5" value="6"></label>
+    <label>Stroke <output></output><input type="range" data-c="s" min="10" max="500" step="10" value="200"></label>
+    <label>Cycles per minute <output></output><input type="range" data-c="n" min="1" max="60" step="1" value="10"></label>
+    <label>Load against the rod <output></output><input type="range" data-c="load" min="0" max="5000" step="10" value="0"></label>
+  </div><div class="cout"></div></div>`;
+}
+function updCalc() {
+  const g = k => $('#modal [data-c=' + k + ']'); if (!g('bore')) return;
+  const [Db, d] = g('bore').value.split(',').map(Number), p = +g('p').value, st = +g('s').value, n = +g('n').value, load = +g('load').value;
+  [['p', p + ' bar'], ['s', st + ' mm'], ['n', n + ' per minute'], ['load', load + ' N']].forEach(([k, v]) => { g(k).previousElementSibling.textContent = v; });
+  const Ap = Math.PI * Db * Db / 4, Ar = Math.PI * (Db * Db - d * d) / 4, Fp = p * 0.1 * Ap, Fr = p * 0.1 * Ar, V = (Ap + Ar) * st / 1e6, free = V * (p + 1.013) / 1.013;
+  const f = v => v >= 100 ? String(Math.round(v)) : v.toFixed(1);
+  $('#modal .cout').innerHTML = `
+    <div class="cres"><span>Push, extending</span><b>${f(Fp)} N</b><i>A = π × ${Db}² / 4 = ${Math.round(Ap)} mm² · F = ${p} bar × 0.1 N/mm² × ${Math.round(Ap)} mm²</i></div>
+    <div class="cres"><span>Pull, retracting</span><b>${f(Fr)} N</b><i>A = π × (${Db}² − ${d}²) / 4 = ${Math.round(Ar)} mm²: the rod takes up part of the piston</i></div>
+    <div class="cres"><span>Free air for one stroke out and back</span><b>${free.toFixed(2)} l</b><i>(${Math.round(Ap)} + ${Math.round(Ar)}) mm² × ${st} mm = ${V.toFixed(3)} l, filled to ${(p + 1.013).toFixed(2)} bar absolute: × ${(p + 1.013).toFixed(2)} / 1.013</i></div>
+    <div class="cres"><span>Air used at ${n} cycles per minute</span><b>${(free * n).toFixed(1)} l/min</b><i>${free.toFixed(2)} l × ${n}</i></div>` +
+    (load ? `<div class="cres${load > Fp * 0.7 ? ' bad' : ''}"><span>With ${load} N against the rod</span><b>${load >= Fp ? 'it will not move' : Math.round(load / Fp * 100) + ' % of the push force'}</b><i>Keep the load under about 70 % of the theoretical force, to leave enough for friction and a steady speed.</i></div>` : '');
+}
+
 /* ---------- final exam: ten questions drawn from the whole course, and a certificate for eight ---------- */
 const PASS = 8, EXAM_N = 10;
 let exam = null;
@@ -1177,7 +1350,8 @@ S.exam = store.get('exam', {best: 0, passed: false, name: ''});
 function shuffled(arr) { const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 function startExam() {
   const pool = [];
-  for (const l of EP.lessons) for (const q of l.quiz || []) pool.push({q, from: l.title});
+  for (const l of EP.lessons) for (const q of l.quiz || []) pool.push({q, from: 'the lesson “' + l.title + '”'});
+  for (const b of EP.practice.bank) pool.push({q: {q: b[2], o: b[3], a: 0, why: b[4]}, from: 'the topic “' + PT(b[1]) + '”'});
   exam = {i: 0, score: 0, miss: [], qs: shuffled(pool).slice(0, EXAM_N).map(p => {
     const order = shuffled(p.q.o.map((_, i) => i));               // answers in a fresh order, so position is no help
     return {q: p.q.q, o: order.map(i => p.q.o[i]), a: order.indexOf(p.q.a), why: p.q.why, from: p.from};
@@ -1189,7 +1363,7 @@ function examQ() {
   openModal(`<div class="dlg"><button class="dlg-x" data-act="close" title="Give up">×</button>
     <div class="dlg-h"><div class="kick">Final exam · question ${exam.i + 1} of ${n}</div><h2 class="exam-q">${esc(q.q)}</h2></div>
     <div class="dlg-b"><div class="quiz exam"><div class="opts">${q.o.map((o, oi) => `<button data-act="ans" data-o="${oi}">${esc(o)}</button>`).join('')}</div>
-      <p class="why hidden">${esc(q.why)} <i>From the lesson “${esc(q.from)}”.</i></p></div></div>
+      <p class="why hidden">${esc(q.why)} <i>From ${esc(q.from)}.</i></p></div></div>
     <div class="dlg-f"><div class="dots">${exam.qs.map((x, j) => `<i class="${j < exam.i ? (x.ok ? 'ok' : 'no') : j === exam.i ? 'on' : ''}"></i>`).join('')}</div>
       <button class="btn primary" data-act="next" disabled>${exam.i === n - 1 ? 'See the result' : 'Next question'}</button></div></div>`,
   (act, b) => {
@@ -1214,7 +1388,7 @@ function examResult() {
         <p>has passed the final examination in <b>electro-pneumatic control</b><br>with <b>${sc} out of ${n}</b> questions answered correctly.</p>
         <p class="cert-s">Logic circuits · relays and latching · timers and counters · safety circuits · sequences and the cascade method · fault finding</p>
         <div class="cert-f"><span>${esc(date)}</span><span>${done} of ${EP.lessons.length} lessons completed</span></div></div>`
-    : `<p style="text-align:center;margin-top:0">You need ${PASS} to pass. ${miss.length ? 'These lessons are worth another look:' : ''}</p><ul class="learned">${miss.map(m => `<li>${esc(m)}</li>`).join('')}</ul>`;
+    : `<p style="text-align:center;margin-top:0">You need ${PASS} to pass. ${miss.length ? 'Worth another look:' : ''}</p><ul class="learned">${miss.map(m => `<li>${esc(m)}</li>`).join('')}</ul>`;
   document.body.classList.toggle('cert-open', pass);
   openModal(`<div class="dlg"><div class="dlg-h"><div class="kick">Final exam</div><h2>${sc} out of ${n}</h2></div>
     <div class="dlg-b"><div class="stars-big no-print">${pass ? '<b>★</b>' : '★'}</div>${body}</div>
@@ -1222,6 +1396,8 @@ function examResult() {
   act => { if (act === 'again') startExam(); else if (act === 'print') { if (!nat('print')) window.print(); } else if (act === 'done') { if (S.mode === 'home') showHome(); else closeModal(); } });
 }
 $('#modal').addEventListener('input', e => {
+  if (e.target.dataset.gloss) { const v = e.target.value.trim().toLowerCase(); $$('#modal .gl').forEach(d => d.classList.toggle('hidden', !!v && !d.textContent.toLowerCase().includes(v))); return; }
+  if (e.target.closest('.calc')) { updCalc(); return; }
   if (!e.target.dataset.cert) return;
   S.exam.name = e.target.value.trim().slice(0, 40); store.set('exam', S.exam);
   $('#modal .cert-name').textContent = S.exam.name || 'your name';
@@ -1239,6 +1415,7 @@ const BADGES = [
   ['logic', 'Logician', 'Solve three logic drills in a row, each on the first test run.'],
   ['hold', 'Halfway there', 'Stop a piston between its end positions with a 5/3 valve and keep it there for 3 seconds.'],
   ['sort', 'Quality control', 'Let the belt run until ten parts in a row have been sorted right: metal pushed off, everything else left alone.'],
+  ['mock', 'Exam ready', 'Score at least 18 out of 20 in a mock exam.'],
   ['cert', 'Certified', 'Pass the final exam with at least 8 out of 10.'],
   ['sleuth', 'Fault finder', 'Find three hidden faults in a row without a single wrong accusation.'],
   ['tech', 'Technician', 'Fix all four machines in the repair shop.'],
@@ -1321,10 +1498,12 @@ function handbook(tab) {
     <li>In the sheet layout, <b>Links</b> are thin cables joining the two halves of one device — coil plug and valve, contact and limit switch. On the bench they are not needed: the two halves are one unit.</li>
     <li>A lead that glows is live. The printed contact symbol between two sockets turns orange and closes when that contact conducts. Bright tubes are under pressure. Moving beads show which way current and air are flowing.</li>
     <li>Double-click a part to fly the camera to it.</li></ul>`;
-  const tabs = [['laws', 'The twelve laws'], ['parts', 'Parts and symbols'], ['read', 'Reading diagrams'], ['sens', 'Sensors'], ['fix', 'Fault finding'], ['keys', 'Keys, touch and 3D']];
+  if (tab === 'gloss') b = glossHTML(); else if (tab === 'calc') b = calcHTML();
+  const tabs = [['laws', 'The twelve laws'], ['parts', 'Parts and symbols'], ['read', 'Reading diagrams'], ['sens', 'Sensors'], ['fix', 'Fault finding'], ['gloss', 'Glossary'], ['calc', 'Calculator'], ['keys', 'Keys, touch and 3D']];
   openModal(`<div class="dlg wide"><button class="dlg-x" data-act="close">×</button><div class="dlg-h"><div class="kick">Handbook</div><h2>${tabs.find(t => t[0] === tab)[1]}</h2></div>
     <div class="tabs">${tabs.map(t => `<button data-act="tab" data-t="${t[0]}" class="${t[0] === tab ? 'on' : ''}">${t[1]}</button>`).join('')}</div>
     <div class="dlg-b">${b}</div></div>`, (a, el) => { if (a === 'tab') handbook(el.dataset.t); });
+  if (tab === 'calc') updCalc();
 }
 
 /* ---------- my circuits: sheets kept under a name on this device ---------- */
@@ -1388,7 +1567,7 @@ function settings() {
       <div class="set-row"><span><b>Appearance</b><i>Auto follows this device</i></span>${seg('theme', th, [['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']])}</div>
       <div class="row" style="margin:14px 0 4px"><button class="btn" data-act="book">Handbook</button><button class="btn" data-act="lib">My circuits</button>${installEvt ? '<button class="btn primary" data-act="install">Install as an app</button>' : ''}</div>
       <div class="box"><h4>Progress on this device</h4><p>${done} of ${EP.lessons.length} lessons · ${stars} ★ · ${bd} of ${BADGES.length} badges · ${libAll().length} saved circuits</p>
-        <div class="row"><button class="btn ghost" data-act="reset">Reset lessons, stars and badges</button></div></div>
+        <div class="row"><button class="btn ghost" data-act="reset">Reset lessons, stars, badges and practice scores</button></div></div>
       <p class="about">PneuLab works without a connection. Everything you build and every score stays on this device; nothing is uploaded. The same workshop runs in any browser at ${NAT ? SITE.replace('https://', '') : `<a href="${SITE}">${SITE.replace('https://', '')}</a>`}</p>
     </div></div>`, (act, b) => {
     if (act === 'speed') { setSpeed(+b.dataset.v); settings(); }
@@ -1402,6 +1581,7 @@ function settings() {
     else if (act === 'reset2') {
       S.prog = {}; S.badges = {}; S.drill = {solved: 0, streak: 0, best: 0}; S.hunt = {solved: 0, streak: 0, best: 0}; S.exam = {best: 0, passed: false, name: S.exam.name};
       for (const k of ['prog', 'badges', 'drill', 'hunt', 'exam']) store.set(k, S[k]);
+      PS.topics = {}; PS.boxes = {}; PS.mocks = []; psave(); store.set('fbox', {});
       if (S.mode === 'home') showHome(); else settings();
       toast('Progress erased. Your saved circuits are still there.');
     }
@@ -1594,6 +1774,7 @@ let last = performance.now(), slow = 0;
 function frame(ts) {
   const dt = Math.max(0, Math.min(0.05, (ts - last) / 1000)); last = ts;
   V3.t += dt; if (V3.t > 0.12) { V3.t = 0; if (v3alive()) v3sync(); }
+  if (PQ && PQ.end && !PQ.done) quizClock();
   if (hero && S.mode === 'home') {
     hero.t += dt; hero.sim.advance(dt);
     if (!hero.started && hero.t > 1.2) { hero.sim.pressLabel('S1', true); hero.started = true; }
