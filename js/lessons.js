@@ -324,6 +324,227 @@ sol.reedcyl = function () {                  // out and back by itself, with ree
   b.add('pb_no', 'S1', f.c(0), f.r(0)).add('reed_no', 'B1', f.c(0), f.r(1)).add('sol', 'Y1', f.c(0), f.r(2)).add('reed_no', 'B2', f.c(1), f.r(0)).add('sol', 'Y2', f.c(1), f.r(2));
   return b.w('PSU.pos', 'S1.3', 'S1.4', 'B1.3', 'B1.4', 'Y1.a', 'Y1.b', 'PSU.neg', 'PSU.pos', 'B2.3', 'B2.4', 'Y2.a', 'Y2.b', 'PSU.neg').circ;
 };
+/* ---------- sequences, signal conflicts and cascades ----------
+   A sequence is written as moves, such as "A+ B+ B− A−". Cylinder A is 1A with limit switches a0 (retracted) and a1
+   (extended), B is 2A with b0/b1, and so on. Solenoids: A+ Y1, A− Y2, B+ Y3, B− Y4, C+ Y5, C− Y6, D+ Y7, D− Y8.
+   Everything here is pure, so the test bench can check each generated circuit against the simulator. */
+const CYL = ['A', 'B', 'C', 'D'], pickC = a => a[Math.floor(Math.random() * a.length)];
+const mvSensor = m => m.c.toLowerCase() + (m.d === '+' ? '1' : '0');               // the switch that confirms a move has finished
+const mvSol = m => 'Y' + (2 * CYL.indexOf(m.c) + (m.d === '+' ? 1 : 2));
+const mvCyl = m => (CYL.indexOf(m.c) + 1) + 'A';
+const mvText = m => m.c + (m.d === '+' ? '+' : '−');
+const seqText = ms => ms.map(mvText).join(' ');
+/* read "A+ B+ B- A-": every cylinder used must start retracted, alternate + and −, and end retracted */
+function parseSeq(str) {
+  const toks = String(str).toUpperCase().replace(/[−–]/g, '-').match(/[A-D]\s*[+-]/g);
+  if (!toks || toks.length < 2) return {err: 'Write moves like A+ B+ B− A−: a letter A to D, then + to extend or − to retract.'};
+  const moves = toks.map(t => ({c: t[0], d: t[t.length - 1]})), at = {};
+  for (const m of moves) {
+    const p = at[m.c] || 0;
+    if ((m.d === '+') === (p === 1)) return {err: `${m.c}${m.d === '+' ? '+' : '−'} comes when ${m.c} is already ${p ? 'extended' : 'retracted'}. Each cylinder must go out and back in turn.`};
+    at[m.c] = m.d === '+' ? 1 : 0;
+  }
+  const used = Object.keys(at).sort();
+  if (used.some(c => at[c])) return {err: `${used.filter(c => at[c]).join(', ')} is still extended at the end. A cycle must end with every cylinder back home.`};
+  if (used.join('') !== CYL.slice(0, used.length).join('')) return {err: 'Use the letters from A on without gaps: A and B, or A, B and C.'};
+  if (moves.length > 12) return {err: 'That is longer than this bench can hold: twelve moves at most.'};
+  return {moves, cyls: used};
+}
+/* Wired directly, each move is started by the switch of the move before it, and the first by S1 together with the switch
+   of the last move. Walk through the cycle and find every step where that goes wrong. */
+function seqProblems(moves) {
+  const n = moves.length, pos = {}, out = [];
+  for (const m of moves) pos[m.c] = 0;
+  for (let j = 0; j < n; j++) {
+    const live = new Set(Object.keys(pos).map(c => c.toLowerCase() + pos[c]));
+    const sig = k => k === 0 ? 'S1 + ' + mvSensor(moves[n - 1]) : mvSensor(moves[k - 1]);
+    const on = k => k === 0 ? j === 0 && live.has(mvSensor(moves[n - 1])) : live.has(mvSensor(moves[k - 1]));
+    const m = moves[j], opp = moves.findIndex((x, k) => x.c === m.c && x.d !== m.d && on(k));
+    if (opp >= 0) out.push({step: j, kind: 'blocked', move: m, by: moves[opp], signal: sig(opp)});
+    for (let k = 0; k < n; k++) {                    // another move commanded now, out of its turn
+      const x = moves[k];
+      if (k === j || x.c === m.c || !on(k) || pos[x.c] === (x.d === '+' ? 1 : 0)) continue;
+      if (moves.some((y, q) => y.c === x.c && y.d !== x.d && on(q))) continue;
+      out.push({step: j, kind: 'early', move: m, by: x, signal: sig(k)});
+    }
+    if (out.length) break;                           // after the first problem the machine is no longer where the table says
+    pos[m.c] = m.d === '+' ? 1 : 0;
+  }
+  return out;
+}
+function problemText(p) {
+  return p.kind === 'blocked'
+    ? `Step ${p.step + 1}: ${mvText(p.move)} cannot happen, because ${p.signal} is still made and still commands ${mvText(p.by)}. Both solenoids of ${p.move.c} are energised, so its valve does not move.`
+    : `Step ${p.step + 1}: while ${mvText(p.move)} is due, ${p.signal} is already made and starts ${mvText(p.by)} out of turn.`;
+}
+/* cascade groups: cut the sequence wherever a cylinder would appear twice in one group */
+function seqGroups(moves) {
+  const G = [[]];
+  for (const m of moves) { if (G[G.length - 1].some(x => x.c === m.c)) G.push([]); G[G.length - 1].push(m); }
+  return G;
+}
+const groupText = G => G.map(g => g.map(mvText).join(' ')).join(' | ');
+function randomSeq(nc) {
+  nc = nc || 2 + Math.floor(Math.random() * 2);
+  for (;;) {
+    const left = {}, ms = [];
+    CYL.slice(0, nc).forEach(c => { left[c] = ['+', '-']; });
+    while (Object.keys(left).length) {
+      const c = pickC(Object.keys(left)), d = left[c].shift();
+      if (!left[c].length) delete left[c];
+      ms.push({c, d});
+    }
+    if (ms.length >= 4) return ms;
+  }
+}
+/* the pneumatic side: one cylinder per letter, each with a double-solenoid valve and both end switches marked */
+function seqRig(cyls) {
+  const b = B();
+  cyls.forEach((c, i) => rig(b, {n: i + 1, valve: 'v52d', ys: ['Y' + (2 * i + 1), 'Y' + (2 * i + 2)], ret: c.toLowerCase() + '0', ext: c.toLowerCase() + '1', fb: 1, y: 80 + 350 * i}));
+  return b;
+}
+const cylsOf = moves => CYL.filter(c => moves.some(m => m.c === c));
+/* every move started by the switch of the move before it: works only for sequences without a conflict */
+function directCircuit(moves) {
+  const b = seqRig(cylsOf(moves)), n = moves.length, f = frame(b, n, 3, {ex: 480});
+  moves.forEach((m, j) => {
+    const Y = mvSol(m), sw = 'L' + j, lab = mvSensor(moves[(j + n - 1) % n]);
+    if (j === 0) { b.add('pb_no', 'S1', f.c(0), f.r(0)).add('ls_no', sw, f.c(0), f.r(1), {label: lab}).w('PSU.pos', 'S1.3', 'S1.4', sw + '.3'); }
+    else b.add('ls_no', sw, f.c(j), f.r(1), {label: lab}).w('PSU.pos', sw + '.3');
+    b.add('sol', Y, f.c(j), f.r(2)).w(sw + '.4', Y + '.a', Y + '.b', 'PSU.neg');
+  });
+  return b.circ;
+}
+/* The relay cascade. Group i < n has relay Ki and a supply line through a normally-open Ki contact; the last group's line
+   runs through normally-closed contacts of every relay, so it is live at rest. K1 is set by S1 and the switch that ends
+   the cycle; every later relay by a contact of the relay before it and the switch that ends that group. Each relay holds
+   itself and is reset by the next relay, and the last one by a normally-closed block of the switch that ends its group.
+   The set paths take their own contacts straight from +24 V: fed from a group line instead, a holding relay would push
+   current backwards through a set switch that is still made and keep the old group alive (a sneak path).
+   Within a group, the first move is fed by the line itself and every other one by the switch of the move before it. */
+function cascadeCircuit(moves) {
+  const G = seqGroups(moves), n = G.length, last = g => G[g][G[g].length - 1];
+  const b = seqRig(cylsOf(moves)), LR = Math.max(1, n - 1), R = n + 2, f = frame(b, (n - 1) + 1 + 2 * (n - 1) + moves.length, R, {ex: 480});
+  let col = 0, k = 0; const nid = p => p + (++k), L = [];
+  for (let i = 0; i < n - 1; i++) { const c = 'KL' + (i + 1); b.add('k_no', c, f.c(col++), f.r(0), {label: 'K' + (i + 1)}).w('PSU.pos', c + '.3'); L[i] = c + '.4'; }
+  let prev = 'PSU.pos';
+  for (let i = 0; i < n - 1; i++) { const c = 'KN' + (i + 1); b.add('k_nc', c, f.c(col), f.r(i), {label: 'K' + (i + 1)}).w(prev, c + '.1'); prev = c + '.2'; }
+  L[n - 1] = prev; col++;
+  for (let i = 0; i < n - 1; i++) {
+    const K = 'K' + (i + 1), sets = [];
+    if (i === 0) { for (let q = 2; q < n; q++) sets.push(['k_nc', 'K' + q]); sets.push(['pb_no', 'S1'], ['ls_no', mvSensor(last(n - 1))]); }   // only from rest
+    else sets.push(['k_no', 'K' + i], ['ls_no', mvSensor(last(i - 1))]);
+    let r = 0, ref = 'PSU.pos';
+    for (const [t, lab] of sets) {
+      const c = t === 'pb_no' ? 'S1' : nid('c'), nc = t === 'k_nc';
+      b.add(t, c, f.c(col), f.r(r++), {label: lab}).w(ref, c + (nc ? '.1' : '.3')); ref = c + (nc ? '.2' : '.4');
+    }
+    const h = nid('h'); b.add('k_no', h, f.c(col + 1), f.r(0), {label: K}).w('PSU.pos', h + '.3', h + '.4', ref);
+    const rs = nid('r');
+    if (i < n - 2) b.add('k_nc', rs, f.c(col), f.r(R - 2), {label: 'K' + (i + 2)}); else b.add('ls_nc', rs, f.c(col), f.r(R - 2), {label: mvSensor(last(i))});
+    b.add('relay', K, f.c(col), f.r(R - 1)).w(ref, rs + '.1', rs + '.2', K + '.A1', K + '.A2', 'PSU.neg');
+    col += 2;
+  }
+  G.forEach((grp, g) => grp.forEach((m, j) => {
+    const Y = mvSol(m); let ref = L[g];
+    if (j > 0) { const c = nid('m'); b.add('ls_no', c, f.c(col), f.r(LR), {label: mvSensor(grp[j - 1])}).w(ref, c + '.3'); ref = c + '.4'; }
+    b.add('sol', Y, f.c(col++), f.r(R - 1)).w(ref, Y + '.a', Y + '.b', 'PSU.neg');
+  }));
+  return b.circ;
+}
+/* a displacement-step diagram: one row per cylinder, up when extended */
+function stepDiagram(moves, mark) {
+  const cy = cylsOf(moves), n = moves.length, W = 34, H = 26, X0 = 34, pos = {}, rows = [];
+  cy.forEach(c => { pos[c] = [0]; });
+  moves.forEach(m => cy.forEach(c => pos[c].push(c === m.c ? (m.d === '+' ? 1 : 0) : pos[c][pos[c].length - 1])));
+  let g = '';
+  for (let s = 0; s <= n; s++) g += `<line x1="${X0 + s * W}" y1="4" x2="${X0 + s * W}" y2="${cy.length * (H + 14) + 2}" class="ink faint thin"/><text x="${X0 + s * W}" y="${cy.length * (H + 14) + 14}" class="pin" text-anchor="middle">${s + 1}</text>`;
+  if (mark != null) g += `<rect x="${X0 + mark * W}" y="2" width="${W}" height="${cy.length * (H + 14)}" fill="var(--hot)" fill-opacity=".14"/>`;
+  cy.forEach((c, i) => {
+    const y0 = 10 + i * (H + 14), Y = p => y0 + (1 - p) * H;
+    let d = `M${X0},${Y(pos[c][0])}`;
+    for (let s = 1; s <= n; s++) d += `L${X0 + s * W},${Y(pos[c][s])}`;
+    rows.push(`<text x="4" y="${y0 + H / 2 + 4}" class="lbl">${c}</text><line x1="${X0}" y1="${Y(0)}" x2="${X0 + n * W}" y2="${Y(0)}" class="ink faint thin"/><path d="${d}" class="ink nofill thick" style="stroke:var(--accent)"/>`);
+  });
+  return `<svg class="stepdia" viewBox="0 0 ${X0 + n * W + 12} ${cy.length * (H + 14) + 20}">${g}${rows.join('')}</svg>`;
+}
+/* A build task for one sequence: the bench has the cylinders, valves and marked switches; the electrics are yours. */
+function seqLesson(o) {
+  const moves = parseSeq(o.seq).moves, G = seqGroups(moves), n = G.length, cy = cylsOf(moves), pr = seqProblems(moves);
+  const ord = moves.map(m => mvCyl(m) + m.d), T = 2.2 * moves.length + 2, txt = seqText(moves);
+  const labels = `<table class="tt"><thead><tr><th>letter</th><th>cylinder</th><th>home switch</th><th>out switch</th><th>out (+)</th><th>back (−)</th></tr></thead><tbody>` +
+    cy.map((c, i) => `<tr><td>${c}</td><td>${i + 1}A</td><td>${c.toLowerCase()}0</td><td>${c.toLowerCase()}1</td><td>Y${2 * i + 1}</td><td>Y${2 * i + 2}</td></tr>`).join('') + '</tbody></table>';
+  return {
+    id: o.id, ch: o.ch, kind: 'build', title: o.title, casc: o.casc || null,
+    brief: (o.brief || '') + ` The sequence is <b>${txt}</b>, started by a tap on <b>S1</b>.`,
+    solution: () => cascadeCircuit(moves), start: bare, palette: ['pb_no', 'ls_no', 'ls_nc', 'relay', 'k_no', 'k_nc', 'sol'],
+    intro: [
+      {h: 'The sequence', html: stepDiagram(moves) + `<p>Every cylinder has a double-solenoid valve, and both of its limit switches are already marked on it. In the circuit, give each switch contact the label of its mark.</p>` + labels},
+      {h: 'Plan it before you wire it', html: `<p><b>1. Look for conflicts.</b> Wire it directly in your head: each move is started by the switch of the move before it. ${pr.length ? pr.map(problemText).join(' ') : 'This one has none.'}</p>
+        <p><b>2. Cut it into groups</b> so that no cylinder appears twice in one group. Here: <b>${groupText(G)}</b>, so ${n} groups and <b>${n - 1} relay${n > 2 ? 's' : ''}</b>.</p>
+        <p><b>3. One supply line per group.</b> Lines 1${n > 2 ? '…' + (n - 1) : ''} run through a normally-open contact of K1${n > 2 ? '…K' + (n - 1) : ''}; the last line runs through normally-closed contacts of every relay, so it is live at rest.</p>
+        <p><b>4. Switching groups.</b> K1 is set by S1 and the switch that ends the cycle. ${n > 2 ? 'Each later relay is set by a contact of the relay before it and the switch that ends that group, and resets the relay before it. ' : ''}Every relay holds itself; the last one is reset by a normally-closed contact of the switch that ends its group.</p>
+        <p><b>5. Within a group</b> the first move hangs straight on the line; each further move goes through the switch of the move before it.</p>${o.more || ''}`}
+    ],
+    hints: [pr.length ? problemText(pr[0]) + ' That is why a direct circuit cannot work.' : 'This one would even work directly.',
+      `Groups: ${groupText(G)}. That is ${n - 1} relay${n > 2 ? 's' : ''}: K1${n > 2 ? ' to K' + (n - 1) : ''}.`,
+      'Take the set paths of the relays straight from +24 V through their own contacts. If you feed them from a group line, a holding relay can push current backwards through a switch that is still made and keep the old group alive.'],
+    tests: [{kind: 'seq', title: 'The sequence ' + txt, steps: [
+      {say: 'Nothing moves before the start', run: 1.5, expect: [['order', []]], why: 'A cylinder moved before S1 was pressed. At rest only the last group line may be live, and its first move is the one that is already done.'},
+      {say: 'Tap S1: the whole sequence runs once', tap: ['S1'], run: T, expect: [['order', ord]].concat(cy.map((c, i) => ['ret', (i + 1) + 'A'])), why: 'The moves did not come in the order ' + txt + ', or a cylinder did not end at home. Find the first move that went wrong: which switch should have started it, and was its group line live?'},
+      {say: 'A second tap runs it again', tap: ['S1'], run: T, expect: [['order', ord.concat(ord)]], why: 'The second cycle went wrong. After a cycle, only the last group may be live, and every relay must be off.'}
+    ]}],
+    learned: ['Wired directly, ' + txt + (pr.length ? ' jams: ' + (pr[0].kind === 'blocked' ? 'a signal that is still made blocks the next move.' : 'a switch that is already made starts a move out of turn.') : ' would have worked.'),
+      `${n} groups (${groupText(G)}) need ${n - 1} relay${n > 2 ? 's' : ''}; only one group line is live at a time, so a switch from another group can do nothing.`,
+      'Set paths from +24 V through their own contacts keep current from creeping backwards into a group line.'],
+    quiz: [{q: `How many relays does an electrical cascade for ${txt} need?`, o: [String(n - 1), String(n), String(Math.max(1, n - 2)) === String(n - 1) ? String(n + 1) : String(Math.max(1, n - 2))], a: 0, why: `It splits into ${n} groups (${groupText(G)}). The last group is live whenever no relay is on, so ${n - 1} relay${n > 2 ? 's are' : ' is'} enough.`}]
+  };
+}
+EP.makeCascade = function (avoid, moves) {               // the endless drill: a random sequence that jams when wired directly
+  let ms = moves, g = 0;
+  if (!ms) do ms = randomSeq(2 + (Math.random() < 0.55 ? 1 : 0)); while ((!seqProblems(ms).length || seqText(ms) === avoid) && g++ < 200);
+  return seqLesson({id: 'casc', ch: -1, casc: seqText(ms), seq: seqText(ms), title: 'Cascade drill', brief: 'Build the control for this sequence.'});
+};
+EP.cascade = {lesson: seqLesson, parse: parseSeq, problems: seqProblems, problemText, groups: seqGroups, groupText, text: seqText, random: randomSeq, direct: directCircuit, circuit: cascadeCircuit, diagram: stepDiagram, sensor: mvSensor, sol: mvSol, cyl: mvCyl, moveText: mvText};
+
+/* ----- timers in depth ----- */
+sol.oneshot = function () {                  // one stroke of fixed length, however long the button is held
+  const b = rig(B()), f = frame(b, 2, 2);
+  b.add('pb_no', 'S1', f.c(0), f.r(0)).add('timer_pulse', 'KT1', f.c(0), f.r(1), {delay: 1}).add('k_no', 'KT1a', f.c(1), f.r(0), {label: 'KT1'}).add('sol', 'Y1', f.c(1), f.r(1));
+  return b.w('PSU.pos', 'S1.3', 'S1.4', 'KT1.A1', 'KT1.A2', 'PSU.neg', 'PSU.pos', 'KT1a.3', 'KT1a.4', 'Y1.a', 'Y1.b', 'PSU.neg').circ;
+};
+sol.warn = function () {                     // a flashing warning for 3 s before the press moves, one stroke, then everything off
+  const b = rig(B(), {ext: 'S3'}), f = frame(b, 6, 3);
+  b.add('pb_no', 'S1', f.c(0), f.r(0)).add('k_no', 'K1a', f.c(1), f.r(0), {label: 'K1'}).add('ls_nc', 'S3', f.c(0), f.r(1)).add('relay', 'K1', f.c(0), f.r(2))
+    .add('k_no', 'K1b', f.c(2), f.r(0), {label: 'K1'}).add('timer', 'KT1', f.c(2), f.r(2), {delay: 3})
+    .add('k_no', 'K1c', f.c(3), f.r(0), {label: 'K1'}).add('timer_flash', 'KT2', f.c(3), f.r(2), {delay: 0.5})
+    .add('k_no', 'KT1a', f.c(4), f.r(0), {label: 'KT1'}).add('sol', 'Y1', f.c(4), f.r(2))
+    .add('k_no', 'KT2a', f.c(5), f.r(0), {label: 'KT2'}).add('k_nc', 'KT1b', f.c(5), f.r(1), {label: 'KT1'}).add('lamp', 'H1', f.c(5), f.r(2));
+  return b.w('PSU.pos', 'S1.3', 'S1.4', 'S3.1', 'PSU.pos', 'K1a.3', 'K1a.4', 'S3.1', 'S3.2', 'K1.A1', 'K1.A2', 'PSU.neg',
+    'PSU.pos', 'K1b.3', 'K1b.4', 'KT1.A1', 'KT1.A2', 'PSU.neg', 'PSU.pos', 'K1c.3', 'K1c.4', 'KT2.A1', 'KT2.A2', 'PSU.neg',
+    'PSU.pos', 'KT1a.3', 'KT1a.4', 'Y1.a', 'Y1.b', 'PSU.neg', 'PSU.pos', 'KT2a.3', 'KT2a.4', 'KT1b.1', 'KT1b.2', 'H1.a', 'H1.b', 'PSU.neg').circ;
+};
+sol.dwell2 = function () {                   // runs on and on: 2 s at the bottom, 1 s at the top, until STOP lets it finish
+  const b = rig(B(), {valve: 'v52d', ret: 'S4', ext: 'S3'}), f = frame(b, 6, 3);
+  b.add('pb_no', 'S1', f.c(0), f.r(0)).add('k_no', 'K1a', f.c(1), f.r(0), {label: 'K1'}).add('pb_nc', 'S2', f.c(0), f.r(1)).add('relay', 'K1', f.c(0), f.r(2))
+    .add('ls_no', 'S3', f.c(2), f.r(0)).add('timer', 'KT1', f.c(2), f.r(2), {delay: 2}).add('ls_no', 'S4', f.c(3), f.r(0)).add('timer', 'KT2', f.c(3), f.r(2), {delay: 1})
+    .add('k_no', 'K1b', f.c(4), f.r(0), {label: 'K1'}).add('k_no', 'KT2a', f.c(4), f.r(1), {label: 'KT2'}).add('sol', 'Y1', f.c(4), f.r(2))
+    .add('k_no', 'KT1a', f.c(5), f.r(0), {label: 'KT1'}).add('sol', 'Y2', f.c(5), f.r(2));
+  return b.w('PSU.pos', 'S1.3', 'S1.4', 'S2.1', 'PSU.pos', 'K1a.3', 'K1a.4', 'S2.1', 'S2.2', 'K1.A1', 'K1.A2', 'PSU.neg',
+    'PSU.pos', 'S3.3', 'S3.4', 'KT1.A1', 'KT1.A2', 'PSU.neg', 'PSU.pos', 'S4.3', 'S4.4', 'KT2.A1', 'KT2.A2', 'PSU.neg',
+    'PSU.pos', 'K1b.3', 'K1b.4', 'KT2a.3', 'KT2a.4', 'Y1.a', 'Y1.b', 'PSU.neg', 'PSU.pos', 'KT1a.3', 'KT1a.4', 'Y2.a', 'Y2.b', 'PSU.neg').circ;
+};
+sol.rivet = function () {                    // three hits, two seconds apart, then stop; the next start begins a fresh count
+  const b = rig(B(), {valve: 'v52d', ret: 'S2', ext: 'S3'}), f = frame(b, 7, 3);
+  b.add('pb_no', 'S1', f.c(0), f.r(0)).add('k_no', 'K1a', f.c(1), f.r(0), {label: 'K1'}).add('k_nc', 'C1a', f.c(0), f.r(1), {label: 'C1'}).add('relay', 'K1', f.c(0), f.r(2))
+    .add('k_no', 'K1b', f.c(2), f.r(0), {label: 'K1'}).add('ls_no', 'S2', f.c(2), f.r(1)).add('timer', 'KT1', f.c(2), f.r(2), {delay: 2})
+    .add('k_no', 'KT1a', f.c(3), f.r(0), {label: 'KT1'}).add('sol', 'Y1', f.c(3), f.r(2))
+    .add('ls_no', 'S3', f.c(4), f.r(0)).add('sol', 'Y2', f.c(4), f.r(2)).add('counter', 'C1', f.c(5), f.r(2), {preset: 3})
+    .add('pb_no', 'S1b', f.c(6), f.r(0), {label: 'S1'}).add('counter_r', 'C1r', f.c(6), f.r(2), {label: 'C1'});
+  return b.w('PSU.pos', 'S1.3', 'S1.4', 'C1a.1', 'PSU.pos', 'K1a.3', 'K1a.4', 'C1a.1', 'C1a.2', 'K1.A1', 'K1.A2', 'PSU.neg',
+    'PSU.pos', 'K1b.3', 'K1b.4', 'S2.3', 'S2.4', 'KT1.A1', 'KT1.A2', 'PSU.neg', 'PSU.pos', 'KT1a.3', 'KT1a.4', 'Y1.a', 'Y1.b', 'PSU.neg',
+    'PSU.pos', 'S3.3', 'S3.4', 'Y2.a', 'Y2.b', 'PSU.neg', 'S3.4', 'C1.A1', 'C1.A2', 'PSU.neg', 'PSU.pos', 'S1b.3', 'S1b.4', 'C1r.R1', 'C1r.R2', 'PSU.neg').circ;
+};
 /* ----- exam projects ----- */
 sol.clampCheck = function () {               // clamp only if a part is there; a lamp for "clamp closed"
   const b = rig(B(), {valve: 'v52d', ext: 'S3'}), f = frame(b, 4, 3);
@@ -385,7 +606,9 @@ EP.chapters = [
   {title: 'Pressure and sequences', blurb: 'Sensing force through air pressure, and two cylinders working in step.'},
   {title: 'Repair shop', blurb: 'Four machines came back broken. Find the fault, fix it, prove it.'},
   {title: 'Sensors', blurb: 'Switches with no moving parts: what each kind can see, and how three wires make them work.'},
-  {title: 'Exam projects', blurb: 'Practical tasks set the way an exam sets them: a specification, a bench, and no step-by-step help.'}
+  {title: 'Exam projects', blurb: 'Practical tasks set the way an exam sets them: a specification, a bench, and no step-by-step help.'},
+  {title: 'Timers in depth', blurb: 'Pulse and flasher relays, and circuits where several timers work together. Hard ones.'},
+  {title: 'Cascades and conflicts', blurb: 'Sequences that jam when wired directly, and the relay cascade that sorts them out, up to four groups.'}
 ];
 
 EP.lessons = [
@@ -1314,7 +1537,88 @@ EP.lessons = [
   ],
   learned: ['A sensor can feed a counter directly: every new detection is one count.', 'The machine resets its own counter, from the limit switch at the end of the push.', 'Because the reset also opens the C1 contact, the spring-return valve brings the pusher back by itself.'],
   quiz: [{q: 'In this project, what would happen if S3 were missing?', o: ['After three boxes the pusher would extend and stay out', 'The pusher would extend after every box', 'Nothing would ever move'], a: 0, why: 'Without the reset the count stays at 3, the C1 contact stays closed and Y1 stays energised.'}]
-}
+},
+{
+  id: 'oneshot', ch: 11, kind: 'build', title: 'One stroke, however long you press', scene: 'press',
+  brief: 'Operators keep their finger on S1, and the press stays down. Make it give <b>one stroke of fixed length</b>: down, then up again after about a second, even while S1 is still held. Single-solenoid valve, coil <b>Y1</b>.',
+  solution: sol.oneshot, start: s => strip(s, c => ['KT1', 'KT1a'].includes(c.id), w => w.k === 'e'), palette: ['pb_no', 'pb_nc', 'sw_no', 'ls_no', 'ls_nc', 'relay', 'k_no', 'k_nc', 'timer', 'timer_off', 'timer_pulse', 'timer_flash', 'counter', 'counter_r', 'sol', 'lamp'],
+  intro: [
+    {h: 'Two more kinds of timer relay', html: figs(fig('timer_pulse', 'Pulse timer KT1', {label: 'KT1', delay: 1}), fig('timer_flash', 'Flasher KT2', {label: 'KT2', delay: 0.5})) +
+      `<ul><li><b>Pulse (interval) timer</b>: its contacts switch the moment the coil is energised and drop back after the set time, <i>even if the coil stays energised</i>. Take the voltage away earlier and the pulse ends early.</li>
+      <li><b>Flasher</b>: while its coil is energised, its contacts go on and off, each for the set time.</li></ul>
+      <p>With the on-delay and off-delay timers you already know, that makes four. In the bin they are under <b>Relay</b>.</p>`},
+    {h: 'The job', html: `<p>Now S1 feeds Y1 directly, so the press stays down as long as the finger stays on the button. Put a timer in between so that holding S1 gives one stroke of about one second.</p>
+      <p>There is more than one way. A pulse timer is the obvious one. An on-delay timer and one of its <b>normally-closed</b> contacts can do the same job.</p>`}
+  ],
+  hints: ['S1 → coil of a pulse timer KT1 (1 s) → 0 V.', '+24 V → a normally-open KT1 contact → Y1 → 0 V. The contact closes the moment S1 is pressed and opens again after 1 s.'],
+  tests: [{kind: 'seq', title: 'One stroke per press', steps: [
+    {say: 'Hold S1: the press comes down', press: ['S1'], run: 0.9, expect: [['ext', '1A']], why: 'Holding S1 must bring the press down.'},
+    {say: 'Keep holding: it goes back up by itself', run: 1.6, expect: [['ret', '1A'], ['cycles', '1A', 1]], why: 'The press must come back after about a second although S1 is still held.'},
+    {say: 'Let go', release: ['S1'], run: 0.5, expect: [['ret', '1A']], why: 'The press moved when S1 was released.'},
+    {say: 'Hold S1 again: one more stroke', press: ['S1'], run: 2.5, expect: [['cycles', '1A', 2], ['ret', '1A']], why: 'A new press must give a new stroke.'},
+    {say: 'Let go', release: ['S1'], run: 0.5, expect: [['ret', '1A']], why: ''}
+  ]}],
+  learned: ['A pulse timer turns a long signal into a short one of fixed length.', 'An on-delay timer with a normally-closed contact does the same: on at once, off after the delay.', 'Taking the voltage off a pulse timer ends its pulse early.'],
+  quiz: [{q: 'A pulse timer is set to 2 s. Its coil is energised for 0.5 s. How long are its contacts switched?', o: ['0.5 s', '2 s', '2.5 s'], a: 0, why: 'The pulse ends when the set time is up or when the coil loses its voltage, whichever comes first.'}]
+},
+{
+  id: 'warn', ch: 11, kind: 'build', title: 'Hard: warn, then strike', scene: 'press',
+  brief: 'A tap on <b>S1</b> starts a warning: lamp <b>H1</b> flashes (0.5 s on, 0.5 s off) for <b>3 s</b>. Only then does the press come down. At the bottom, limit switch <b>S3</b> sends it back up and everything switches off. Single-solenoid valve, coil <b>Y1</b>.',
+  solution: sol.warn, start: bare, palette: ['pb_no', 'pb_nc', 'sw_no', 'ls_no', 'ls_nc', 'relay', 'k_no', 'k_nc', 'timer', 'timer_off', 'timer_pulse', 'timer_flash', 'counter', 'counter_r', 'sol', 'lamp'],
+  intro: [{h: 'Specification', html: `<ul><li><b>S1</b> (pushbutton): one tap starts the whole thing.</li><li><b>H1</b> (lamp): flashes for 3 s, then goes dark when the press moves.</li>
+    <li><b>1A</b>, valve with spring return, coil <b>Y1</b>: comes down after the 3 s.</li><li><b>S3</b>: limit switch at the bottom (already marked). Reaching it ends the cycle: up again, lamp off, all relays off.</li></ul>
+    <p>You will need a relay that remembers the tap, an on-delay timer for the 3 s, a flasher for the lamp, and a way to make the bottom position switch the relay off.</p>`}],
+  hints: ['Memory first: S1 sets a relay K1 that holds itself. Put a normally-<b>closed</b> contact of S3 in its path, so reaching the bottom breaks the latch.', 'While K1 is on: an on-delay timer KT1 (3 s) and a flasher KT2 (0.5 s) are both energised. A normally-open KT1 contact feeds Y1.', 'The lamp: KT2 contact in series with a normally-closed KT1 contact, so it flashes only until the 3 s are up.'],
+  tests: [{kind: 'seq', title: 'Warning, stroke, off', steps: [
+    {say: 'Tap S1: the lamp comes on', tap: ['S1'], run: 0.2, expect: [['lamp', 'H1', true], ['ret', '1A']], why: 'The lamp must light at once, and the press must not move yet.'},
+    {say: '…and goes off again: it flashes', run: 0.5, expect: [['lamp', 'H1', false], ['ret', '1A']], why: 'After half a second the lamp must be dark: it should flash, not stay on.'},
+    {say: 'The press is still waiting', run: 1.9, expect: [['order', []]], why: 'The press moved before the 3 s of warning were up.'},
+    {say: 'After 3 s it strikes once, comes back, and everything is off', run: 3.5, expect: [['cycles', '1A', 1], ['ret', '1A'], ['lamp', 'H1', false]], why: 'After the warning the press must make one stroke and come back, with the lamp dark. If it stays down, S3 does not break the latch.'},
+    {say: 'It stays at rest', run: 2, expect: [['still', '1A'], ['lamp', 'H1', false]], why: 'Something started again without S1.'}
+  ]}],
+  learned: ['A latch, a timer and a flasher together: the relay remembers, the on-delay waits, the flasher warns.', 'A normally-closed limit switch in a latch ends the cycle from the machine itself.', 'A normally-closed timer contact switches something off when the time is up.'],
+  quiz: [{q: 'In this circuit, why does the lamp go dark once the press moves?', o: ['A normally-closed KT1 contact is in series with the flasher contact', 'The flasher has run out', 'The lamp is only fed by S1'], a: 0, why: 'When KT1 times out its normally-closed contact opens, cutting the lamp branch while the normally-open KT1 contact starts the stroke.'}]
+},
+{
+  id: 'dwell2', ch: 11, kind: 'build', title: 'Hard: dwell at both ends', scene: 'press',
+  brief: 'A curing press runs continuously after a tap on <b>S1</b>: down, <b>2 s</b> at the bottom, up, <b>1 s</b> at the top, down again… A tap on <b>S2</b> (normally closed) lets it finish the cycle and stop at the top. Double-solenoid valve: <b>Y1</b> down, <b>Y2</b> up. Limit switches <b>S3</b> at the bottom, <b>S4</b> at the top.',
+  solution: sol.dwell2, start: bare, palette: ['pb_no', 'pb_nc', 'sw_no', 'ls_no', 'ls_nc', 'relay', 'k_no', 'k_nc', 'timer', 'timer_off', 'timer_pulse', 'timer_flash', 'counter', 'counter_r', 'sol', 'lamp'],
+  intro: [{h: 'Specification', html: `<ul><li><b>S1</b> start, <b>S2</b> stop (normally closed): run mode, kept in a relay.</li><li><b>S3</b> (bottom) and <b>S4</b> (top) are marked on the cylinder.</li>
+    <li>At the bottom it waits 2 s, then goes up. At the top it waits 1 s, then, if still running, goes down again.</li><li>After STOP it finishes the cycle and stays at the top.</li></ul>
+    <p>Two on-delay timers, one at each end. Think about what may start a stroke and what may only end one.</p>`}],
+  hints: ['K1 is the run memory: S1 sets it, it holds itself, normally-closed S2 breaks it.', 'S3 (bottom) → on-delay KT1 (2 s). A KT1 contact feeds Y2 (up). S4 (top) → on-delay KT2 (1 s).', 'Y1 (down) = K1 AND KT2: only while running, and only after the second at the top. The double-solenoid valve remembers each direction, so short signals are enough.'],
+  tests: [{kind: 'seq', title: 'Run with dwells, then stop', steps: [
+    {say: 'Tap S1: down it goes', tap: ['S1'], run: 1.5, expect: [['ext', '1A']], why: 'After S1 the press must come down (it has already waited at the top since power-on).'},
+    {say: 'It stays down: 2 s dwell', run: 1, expect: [['ext', '1A']], why: 'The press came back up before its 2 s at the bottom were over.'},
+    {say: 'Up, and waiting at the top', run: 1.6, expect: [['ret', '1A']], why: 'After 2 s at the bottom it must go up, and wait about a second at the top.'},
+    {say: 'Down again: it keeps running', run: 1.6, expect: [['ext', '1A'], ['cycles', '1A', 2]], why: 'After a second at the top it must come down again by itself.'},
+    {say: 'Tap S2: it finishes the cycle and stops at the top', tap: ['S2'], run: 6, expect: [['ret', '1A'], ['cycles', '1A', 2]], why: 'After STOP it must finish the stroke it is in and stay at the top.'},
+    {say: 'It stays stopped', run: 3, expect: [['still', '1A']], why: 'The press started again after STOP.'}
+  ]}],
+  learned: ['Two on-delay timers give a dwell at each end; the run relay decides whether a new cycle may start.', 'A stop that waits for the end of the cycle: STOP only blocks the start of the next stroke.', 'With a double-solenoid valve, the timer signals only need to be short.'],
+  quiz: [{q: 'In this circuit, why must Y1 go through a K1 contact but Y2 need not?', o: ['K1 decides whether a new stroke may start; going back up must always be allowed', 'Y2 is weaker', 'K1 has only one contact'], a: 0, why: 'After STOP the press must still be able to return. Only the start of a new stroke depends on the run memory.'}]
+},
+{
+  id: 'rivet', ch: 11, kind: 'build', title: 'Very hard: three hits, two seconds apart', scene: 'press',
+  brief: 'A riveting press: after a tap on <b>S1</b> it strikes <b>three times</b>, waiting <b>2 s</b> at the top before every stroke, then stops. The next tap on S1 starts a fresh set of three. Double-solenoid valve: <b>Y1</b> down, <b>Y2</b> up. Limit switches <b>S2</b> at the top, <b>S3</b> at the bottom. Counter <b>C1</b>.',
+  solution: sol.rivet, start: bare, palette: ['pb_no', 'pb_nc', 'sw_no', 'ls_no', 'ls_nc', 'relay', 'k_no', 'k_nc', 'timer', 'timer_off', 'timer_pulse', 'timer_flash', 'counter', 'counter_r', 'sol', 'lamp'],
+  intro: [{h: 'Specification', html: `<ul><li><b>S1</b>: start a set of three strokes. It also clears the count of the last set.</li><li>Before each stroke the press waits 2 s at the top (<b>S2</b>).</li>
+    <li>At the bottom (<b>S3</b>) it goes straight back up, and the stroke is counted.</li><li>After the third stroke it stays at the top until S1 is tapped again.</li></ul>
+    <p>A run relay, an on-delay timer, a counter with its reset, and a double-solenoid valve. This is the hardest timer task in the course: plan it on paper first.</p>`}],
+  hints: ['Run relay K1: S1 sets it, it holds itself, and a normally-<b>closed</b> C1 contact breaks it when three strokes are counted.', 'K1 and S2 (top) feed an on-delay timer KT1 (2 s). A KT1 contact feeds Y1. S3 (bottom) feeds Y2 and the counter coil C1.', 'A second contact block of S1 feeds the counter’s reset coil, so a new start clears the count. The double-solenoid valve keeps going down after KT1 drops out as the press leaves the top.'],
+  tests: [{kind: 'seq', title: 'Three strokes, then stop', steps: [
+    {say: 'Tap S1: it waits 2 s first', tap: ['S1'], run: 1.5, expect: [['order', []]], why: 'The first stroke came before the 2 s wait at the top.'},
+    {say: 'Three strokes, 2 s apart', run: 10, expect: [['cycles', '1A', 3], ['ret', '1A']], why: 'After S1 the press must make exactly three strokes and end at the top. Count the strokes in the recorder.'},
+    {say: 'Then it stays still', run: 3, expect: [['still', '1A']], why: 'A fourth stroke came: the counter must stop the run after three.'},
+    {say: 'Tap S1 again: a fresh set of three', tap: ['S1'], run: 11.5, expect: [['cycles', '1A', 6], ['ret', '1A']], why: 'A new tap on S1 must clear the counter and give three more strokes.'}
+  ]}],
+  learned: ['A counter can end a run: its normally-closed contact breaks the run relay.', 'The start button with a second contact block clears the count of the last set.', 'An on-delay timer at one end position spaces the strokes apart.'],
+  quiz: [{q: 'What would happen in this circuit if S1 did not reset the counter?', o: ['After the first set, S1 could never start the press again', 'The press would make six strokes', 'Nothing would change'], a: 0, why: 'The count would stay at 3, so the normally-closed C1 contact would stay open and K1 could never latch.'}]
+},
+seqLesson({id: 'cas3', ch: 12, title: 'Three cylinders, two groups', seq: 'A+ B+ C+ C- B- A-', brief: 'Clamp (A), position (B) and drill (C): everything goes out in turn and comes back in the opposite order.'}),
+seqLesson({id: 'cas3g', ch: 12, title: 'Three groups', seq: 'A+ B+ B- C+ C- A-', brief: 'A clamps, B stamps, C ejects, then A lets go. A appears at both ends, so one cut is not enough.'}),
+seqLesson({id: 'casab', ch: 12, title: 'Three groups, a different cut', seq: 'A+ B+ A- C+ C- B-', brief: 'Here the cylinder that moved first does not come back last. Find where the groups must be cut.'}),
+seqLesson({id: 'cas4g', ch: 12, title: 'Very hard: four groups, three relays', seq: 'A+ A- B+ B- C+ C-', brief: 'Three cylinders, each out and straight back. It looks the simplest of all, yet it needs the most groups.'})
 ];
 
 /* examples offered in the sandbox */
@@ -1329,6 +1633,9 @@ EP.examples = [
 EP.examples.push(['Single cycle / continuous', sol.modes], ['Emergency stop', sol.estop]);
 EP.examples.push(['Off-delay timer', sol.offdelay], ['Two-hand safety start', sol.twohand], ['Jog with a 5/3 valve', sol.jog], ['Sequence A+ A− B+ B− (cascade)', sol.cascade2]);
 
+EP.examples.push(['Pulse timer: one fixed stroke', sol.oneshot], ['Warning flasher, then a stroke', sol.warn], ['Dwell at both ends, continuous', sol.dwell2], ['Three strokes 2 s apart', sol.rivet],
+  ['Cascade A+ B+ C+ C− B− A−', () => cascadeCircuit(parseSeq('A+ B+ C+ C- B- A-').moves)], ['Cascade A+ B+ B− C+ C− A− (3 groups)', () => cascadeCircuit(parseSeq('A+ B+ B- C+ C- A-').moves)],
+  ['Cascade A+ A− B+ B− C+ C− (4 groups)', () => cascadeCircuit(parseSeq('A+ A- B+ B- C+ C-').moves)]);
 EP.examples.push(['Gluing clamp with part check', sol.clampCheck], ['Door: two OPEN buttons, CLOSE wins', sol.doorTwo], ['Batch pusher with counter', sol.batch]);
 EP.examples.push(['Proximity sensor, three wires', sol.prox], ['Sensor test bench', sol.senses], ['Sorting station', sol.sorter], ['Reed switches on the cylinder', sol.reedcyl]);
 

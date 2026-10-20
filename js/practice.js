@@ -15,14 +15,14 @@ const TOPICS = [
   {id: 'elec', name: 'Electrical basics', ch: [0, 3]},
   {id: 'logic', name: 'Logic and truth tables', ch: [1]},
   {id: 'relay', name: 'Relays and latching', ch: [3, 4]},
-  {id: 'time', name: 'Timers and counters', ch: [5]},
+  {id: 'time', name: 'Timers and counters', ch: [5, 11]},
   {id: 'sens', name: 'Sensors and switches', ch: [2, 9]},
-  {id: 'seq', name: 'Sequences', ch: [7]},
+  {id: 'seq', name: 'Sequences and cascades', ch: [7, 12]},
   {id: 'safe', name: 'Safety and operating modes', ch: [6]},
   {id: 'fault', name: 'Fault finding', ch: [8]},
   {id: 'calc', name: 'Calculations', ch: [0]}
 ];
-const CH_TOPIC = ['air', 'logic', 'valve', 'relay', 'relay', 'time', 'safe', 'seq', 'fault', 'sens', 'logic'];   // lesson chapter → topic
+const CH_TOPIC = ['air', 'logic', 'valve', 'relay', 'relay', 'time', 'safe', 'seq', 'fault', 'sens', 'relay', 'time', 'seq'];   // lesson chapter → topic
 
 /* ---------- the written bank: [id, topic, question, [right answer, ...wrong answers], why] ---------- */
 const BANK = [
@@ -277,7 +277,76 @@ function genLatch() {
     on ? 'S1 reaches the coil without passing S2; STOP only breaks the holding contact. So START wins.' : 'S2 sits in series with both S1 and the holding contact, so while it is pressed nothing reaches the coil. STOP wins.',
     {circ});
 }
-const GENS = [genSymbol, genLetter, genTerminal, genValveCode, genForce, genAir, genSensor, genCircuit, genCircuit, genLatch];
+/* ---- timer relays: when is the contact closed, and which timer drew this picture ---- */
+const TIMERS = {on: 'On-delay timer', off: 'Off-delay timer', pulse: 'Pulse timer', flash: 'Flasher'};
+const TWHY = {on: 'An on-delay timer switches only after its coil has been energised for the whole set time, and drops back the moment the coil loses power.',
+  off: 'An off-delay timer switches at once and holds on for the set time after the coil loses power.',
+  pulse: 'A pulse timer switches at once and drops back after the set time, or earlier if the coil loses power first.',
+  flash: 'A flasher switches on and off by turns, each for the set time, starting with on, for as long as the coil is energised.'};
+const num = x => String(+x.toFixed(1));
+function timerOn(kind, D, X) {                              // when the contact is closed, if the coil is energised from 0 to X
+  if (kind === 'on') return X > D ? [[D, X]] : [];
+  if (kind === 'off') return [[0, X + D]];
+  if (kind === 'pulse') return [[0, Math.min(D, X)]];
+  const out = []; for (let t = 0; t < X - 1e-9; t += 2 * D) out.push([t, Math.min(t + D, X)]); return out;
+}
+const ivText = a => !a.length ? 'never' : a.map(([x, y]) => `from ${num(x)} s to ${num(y)} s`).join(', and ');
+function genTimerWhen() {
+  for (;;) {
+    const kind = pick(Object.keys(TIMERS)), D = pick([0.5, 1, 1.5, 2, 3]), X = pick([1, 2, 2.5, 3, 4, 5]);
+    if (kind === 'flash' && X / D > 6) continue;
+    const ans = ivText(timerOn(kind, D, X)), wrong = [...new Set(Object.keys(TIMERS).filter(k => k !== kind).map(k => ivText(timerOn(k, D, X))))].filter(o => o !== ans);
+    if (wrong.length < 2) continue;
+    return mk('time', `${TIMERS[kind]}, set to ${num(D)} s. Its coil is energised from 0 s to ${num(X)} s. When is its normally-open contact closed?`, ans, wrong, TWHY[kind]);
+  }
+}
+function genTimerPick() {
+  const D = pick([1, 1.5]), X = pick([3.5, 4, 4.5, 5]), kind = pick(Object.keys(TIMERS)), T = X + D + 1, sx = t => (40 + t / T * 250).toFixed(1);
+  const row = (iv, y, label, col) => {
+    let d = `M${sx(0)},${y + 22}`;
+    for (const [a, b] of iv) d += `L${sx(a)},${y + 22}L${sx(a)},${y}L${sx(b)},${y}L${sx(b)},${y + 22}`;
+    return `<text x="2" y="${y + 15}" class="pin">${label}</text><line x1="${sx(0)}" y1="${y + 22}" x2="${sx(T)}" y2="${y + 22}" class="ink faint thin"/><path d="${d}L${sx(T)},${y + 22}" class="ink nofill thick" style="stroke:${col}"/>`;
+  };
+  let ticks = ''; for (let t = 0; t <= T; t++) ticks += `<line x1="${sx(t)}" y1="8" x2="${sx(t)}" y2="84" class="ink faint thin"/><text x="${sx(t)}" y="96" class="pin" text-anchor="middle">${t}</text>`;
+  const fig = `<svg class="tdia" viewBox="0 0 300 100">${ticks}${row([[0, X]], 10, 'coil', 'var(--ink)')}${row(timerOn(kind, D, X), 50, 'contact', 'var(--accent)')}</svg>`;
+  return mk('time', `A timer relay is set to ${num(D)} s and its coil is energised from 0 s to ${num(X)} s. Its normally-open contact does what the lower line shows. Which kind is it?`,
+    TIMERS[kind], Object.keys(TIMERS).filter(k => k !== kind).map(k => TIMERS[k]), TWHY[kind], {fig});
+}
+
+/* ---- sequences: does it run directly, where does it jam, how many groups, where to cut ---- */
+function seqWith(conflict) { const C = EP.cascade; for (let g = 0; g < 300; g++) { const ms = C.random(2 + rnd(2)); if (!!C.problems(ms).length === conflict) return ms; } return C.parse(conflict ? 'A+ B+ B- A-' : 'A+ B+ A- B-').moves; }
+function genSeqRuns() {
+  const C = EP.cascade, ms = seqWith(Math.random() < 0.6), pr = C.problems(ms), t = C.text(ms);
+  return mk('seq', `Wired directly, with limit switches and double-solenoid valves, does the sequence ${t} run?`, pr.length ? 'No, it jams or goes wrong' : 'Yes, it runs', [pr.length ? 'Yes, it runs' : 'No, it jams or goes wrong'],
+    pr.length ? C.problemText(pr[0]) : 'Every signal is gone before the opposite move of the same cylinder is due, and no switch starts a move out of turn.', {fig: C.diagram(ms)});
+}
+function genSeqSignal() {
+  const C = EP.cascade, ms = seqWith(true), pr = C.problems(ms), t = C.text(ms), cy = [...new Set(ms.map(m => m.c.toLowerCase()))];
+  const all = []; cy.forEach(c => all.push(c + '0', c + '1'));
+  const ans = pr[0].signal, wrong = PR_shuffle(all.filter(x => x !== ans && !ans.endsWith(x))).slice(0, 3);
+  return mk('seq', `Wired directly, the sequence ${t} goes wrong. Which signal causes the first problem?`, ans, wrong, C.problemText(pr[0]), {fig: C.diagram(ms)});
+}
+function genSeqGroups() {
+  const C = EP.cascade, ms = seqWith(true), G = C.groups(ms), n = G.length, t = C.text(ms);
+  const opts = [n, n + 1, n - 1 >= 2 ? n - 1 : n + 2].map(v => v + ' groups, ' + (v - 1) + ' relay' + (v - 1 === 1 ? '' : 's'));
+  return mk('seq', `How many groups, and how many relays, does an electrical cascade for ${t} need?`, opts[0], opts.slice(1),
+    `Cut wherever a cylinder would appear twice in one group: ${C.groupText(G)}. The last group is live whenever no relay is on, so ${n} groups need ${n - 1} relay${n - 1 === 1 ? '' : 's'}.`, {fig: C.diagram(ms)});
+}
+function genSeqSplit() {
+  const C = EP.cascade, ms = seqWith(true), G = C.groups(ms), n = G.length, t = C.text(ms), right = C.groupText(G), wrong = new Set();
+  for (let g = 0; g < 300 && wrong.size < 3; g++) {
+    const cuts = ms.map((_, i) => i > 0 && Math.random() < 0.4), parts = [[]];
+    ms.forEach((m, i) => { if (cuts[i]) parts.push([]); parts[parts.length - 1].push(m); });
+    const valid = parts.every(p => new Set(p.map(m => m.c)).size === p.length), txt = C.groupText(parts);
+    if (txt !== right && !(valid && parts.length === n)) wrong.add(txt);
+  }
+  if (wrong.size < 2) return genSeqGroups();
+  return mk('seq', `Which group division for ${t} follows the rule: no cylinder twice in one group, and as few groups as possible?`, right, [...wrong],
+    `Go along the sequence and cut just before a cylinder would appear for the second time in the current group: ${right}.`);
+}
+const PR_shuffle = shuffle;
+const GENS = [genSymbol, genLetter, genTerminal, genValveCode, genForce, genAir, genSensor, genCircuit, genCircuit, genLatch,
+  genTimerWhen, genTimerPick, genSeqRuns, genSeqSignal, genSeqGroups, genSeqSplit];
 
 /* ---------- putting a set together ---------- */
 function bankQ(b) { return {id: b[0], topic: b[1], q: b[2], o: b[3], a: 0, why: b[4]}; }

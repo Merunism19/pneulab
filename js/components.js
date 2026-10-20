@@ -77,6 +77,14 @@ function coil(c, sim, kind) {
       tx(-21, 47, (run ? Math.max(0, c.props.delay - s.tm).toFixed(1) : c.props.delay) + ' s', 'pin', 'end');
     return g + tx(-22, 34, c.label, 'lbl', 'end');
   }
+  if (kind === 'timer_pulse' || kind === 'timer_flash') {   // a single pulse, or a pulse train, drawn in the side box
+    const run = !!(s && s.hi), left = run && kind === 'timer_pulse' && s.on ? Math.max(0, c.props.delay - s.tt).toFixed(1) + ' s' : c.props.delay + ' s';
+    g += rc(-20, 23, 8, 14, 'coil ' + (run ? 'busy' : '')) +
+      (kind === 'timer_pulse' ? `<polyline points="-19,34 -17.5,34 -17.5,27 -14.5,27 -14.5,34 -13,34" class="ink nofill thin"/>`
+        : `<polyline points="-19.5,34 -19.5,27 -17.7,27 -17.7,34 -15.9,34 -15.9,27 -14.1,27 -14.1,34 -12.5,34" class="ink nofill thin"/>`) +
+      tx(-23, 47, left, 'pin', 'end');
+    return g + tx(-24, 34, c.label, 'lbl', 'end');
+  }
   if (kind === 'counter') g += tx(0, 33.5, (s ? s.count : 0) + '/' + c.props.preset, 'cnt ' + (on ? 'inv' : ''));
   if (r) g += tx(0, 33.5, 'R', 'cnt ' + (on ? 'inv' : ''));
   return g + tx(-17, 34, c.label, 'lbl', 'end');
@@ -287,6 +295,12 @@ const D = EP.defs = {
   timer_off: {name: 'Timer relay, off-delay', short: 'Timer · off-delay', cat: 'e', grp: 'Relay', prefix: 'KT', load: true, R: 580, props: {delay: 2},
     ports: E2('A1', 'A2'), box: [-48, 2, 64, 56], draw: (c, s) => coil(c, s, 'timer_off'),
     desc: 'The opposite kind of patience. Its contacts change over the moment the coil is energised, like any relay. But when the coil loses power they hold on for the set time before they drop back. The solid box on the symbol means “lets go late”.'},
+  timer_pulse: {name: 'Timer relay, pulse (interval)', short: 'Timer · pulse', cat: 'e', grp: 'Relay', prefix: 'KT', load: true, R: 580, props: {delay: 1},
+    ports: E2('A1', 'A2'), box: [-50, 2, 66, 56], draw: (c, s) => coil(c, s, 'timer_pulse'),
+    desc: 'Its contacts switch the moment the coil is energised and drop back after the set time, even if the coil stays energised. Taking the voltage away ends the pulse early. It turns a long press into a short signal of fixed length.'},
+  timer_flash: {name: 'Timer relay, flasher', short: 'Timer · flasher', cat: 'e', grp: 'Relay', prefix: 'KT', load: true, R: 580, props: {delay: 0.5},
+    ports: E2('A1', 'A2'), box: [-50, 2, 66, 56], draw: (c, s) => coil(c, s, 'timer_flash'),
+    desc: 'While its coil is energised, its contacts switch on and off again and again, each for the set time: on, off, on, off. It starts with “on”. Use it for a flashing warning lamp, or to drive a cylinder back and forth.'},
   counter: {name: 'Preset counter', short: 'Counter', cat: 'e', grp: 'Relay', prefix: 'C', load: true, R: 580, props: {preset: 3},
     ports: E2('A1', 'A2'), box: BOX2, draw: (c, s) => coil(c, s, 'counter'),
     desc: 'Counts pulses: every time voltage appears across A1–A2 the count goes up by one. When it reaches the preset, every contact with its label changes over and stays that way until the counter is reset.'},

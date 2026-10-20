@@ -17,7 +17,7 @@ EP.K = {P_ATM, RT, PULL_IN, DROP_OUT, I_TRIP};
 
 const isCyl = t => t === 'cyl_da' || t === 'cyl_sa';
 const isValve = t => t === 'v52s' || t === 'v52d' || t === 'v32s' || t === 'v53';
-const isCoil = t => t === 'relay' || t === 'timer' || t === 'timer_off';       // coils whose contacts carry their label
+const isCoil = t => t === 'relay' || t === 'timer' || t === 'timer_off' || t === 'timer_pulse' || t === 'timer_flash';   // coils whose contacts carry their label
 const isPush = t => D[t].act === 'push';
 const isLs = t => t === 'ls_no' || t === 'ls_nc' || t === 'reed_no';        // two-wire position contacts: roller or reed
 const isSens = t => !!D[t].sensor;                                           // three-wire proximity sensors
@@ -319,7 +319,13 @@ class Sim {
 
     for (const l of this.eL) {
       const s = this.st[l.c.id], t = l.c.type, v = this.faults.dead && this.faults.dead[l.c.id] ? 0 : s.v;
-      if (isCoil(t)) {                           // an armature needs time to pull in; a timer relay waits its whole delay
+      if (t === 'timer_pulse' || t === 'timer_flash') {     // timed from the moment the coil is energised: one pulse, or on and off by turns
+        const hi = s.hi ? v > DROP_OUT : v >= PULL_IN;
+        if (hi !== !!s.hi) { s.hi = hi; s.tt = 0; } else if (hi) s.tt += dt;
+        const T = Math.max(0.05, l.c.props.delay), want = !hi ? false : t === 'timer_pulse' ? s.tt < T : Math.floor(s.tt / T) % 2 === 0;
+        if (want !== s.on) { s.on = want; this.events.push({type: 'relay', id: l.c.id, on: want}); }
+        s.tm = hi ? s.tt : 0;
+      } else if (isCoil(t)) {                           // an armature needs time to pull in; a timer relay waits its whole delay
         const want = s.on ? v > DROP_OUT : v >= PULL_IN;
         if (want !== s.on) {
           s.tm += dt;

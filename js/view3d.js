@@ -319,7 +319,7 @@ function mFcv(c) {
   W.tag(Math.round(c.props.open) + ' %', x, 34, z + 30);
 }
 const MODELS = {psu: mPsu, air: mAir, pb_no: mPush, pb_nc: mPush, sw_no: mPush, sw_nc: mPush, ls_no: mLs, ls_nc: mLs, reed_no: mLs, s_ind: mSens, s_cap: mSens, s_opt: mSens, b_no: mContact, b_nc: mContact, k_no: mContact, k_nc: mContact,
-  relay: mRelay, timer: mRelay, timer_off: mRelay, counter: mCounter, counter_r: mReset, sol: mSol, lamp: mLamp, v52s: mValve, v52d: mValve, v53: mValve, v32s: mValve,
+  relay: mRelay, timer: mRelay, timer_off: mRelay, timer_pulse: mRelay, timer_flash: mRelay, counter: mCounter, counter_r: mReset, sol: mSol, lamp: mLamp, v52s: mValve, v52d: mValve, v53: mValve, v32s: mValve,
   cyl_da: mCyl, cyl_sa: mCyl, fcv: mFcv, gauge: mGauge, psw: mPsw};
 
 /* ---------- the training bench: devices live in the boxes a pneumatics lab really has ----------
@@ -437,12 +437,12 @@ const HEADS = {
     const arm = W.dyn(b => b.box(12, 1.2, 17, 0, 0, 8.5, STEEL, 0.4));
     W.dyn(b => b.box(25, 14.5, 21, cx, HT + 1.4, hz, ['#dceef6', 0, 0.08], 2), {alpha: 0.14, layer: 2, noShadow: true});
     arm.model = M.mul(T(cx, HT + 12.4, hz - 8), M.rx(-0.2));
-    if (t !== 'relay') { s.cy(5, 2.6, cx - 15.5, HT, hz + 6, BLK, 18).box(1.2, 0.8, 4, cx - 15.5, HT + 2.6, hz + 4.6, [t === 'timer' ? '#e8890c' : '#2f9be0', 0, 0.4], 0.3); txt(t === 'timer' ? 'on' : 'off', cx - 15.5, HT + 0.12, hz - 3.4, 2.8, INK); }
+    if (t !== 'relay') { s.cy(5, 2.6, cx - 15.5, HT, hz + 6, BLK, 18).box(1.2, 0.8, 4, cx - 15.5, HT + 2.6, hz + 4.6, [{timer: '#e8890c', timer_off: '#2f9be0', timer_pulse: '#8e5bd6', timer_flash: '#d93a86'}[t] || '#2f9be0', 0, 0.4], 0.3); txt({timer: 'on', timer_off: 'off', timer_pulse: 'pulse', timer_flash: 'flash'}[t] || 'off', cx - 15.5, HT + 0.12, hz - 3.4, 2.8, INK); }
     const g = W.led(cx + 16.5, HT, hz - 7, '#ffd23d', 13); if (!c) return;
     const tg = W.tag(c.label, cx, HT + 24, hz);
     W.upd.push(() => {
       const st = cs(c) || {on: false, tm: 0}; arm.model = M.mul(T(cx, HT + 12.4, hz - 8), M.rx(st.on ? 0 : -0.2)); g.k = st.on ? 1 : 0;
-      const timing = t === 'timer' ? !st.on && st.tm > 0 : t === 'timer_off' ? st.on && st.tm > 0.02 : false;
+      const timing = t === 'timer' ? !st.on && st.tm > 0 : t === 'timer_off' ? st.on && st.tm > 0.02 : t === 'timer_pulse' ? st.on && st.tm > 0 : false;
       tg.text = c.label + (timing ? '  ' + Math.max(0, c.props.delay - st.tm).toFixed(1) + ' s' : ''); tg.cls = timing ? 'val' : '';
     });
   },
@@ -484,8 +484,8 @@ function unit(x, z, u) {
   const bus = unitBox(x, z, u.w, d, u.name, u.bus);
   u.cols.forEach((col, i) => {
     const cx = x + 6 + cw * (i + 0.5), hz = z + 43 - (u.bus ? 0 : 8);
-    HEADS[col.kind === 'timer' || col.kind === 'timer_off' ? 'relay' : col.kind](col, cx, hz);
-    if (col.label && !['relay', 'timer', 'timer_off', 'counter', 'lamp'].includes(col.kind)) W.tag(col.label, cx, HT + 20, hz);
+    HEADS[col.kind.startsWith('timer') ? 'relay' : col.kind](col, cx, hz);
+    if (col.label && col.kind !== 'relay' && !col.kind.startsWith('timer') && !['counter', 'lamp'].includes(col.kind)) W.tag(col.label, cx, HT + 20, hz);
     if (col.label) txt(col.label, cx, HT + 0.12, hz + 14.5, 3.6, INK);
     if (col.tri) { const zz = z + 70 - (u.bus ? 0 : 8); tri(col.main, cx, HT, zz); [['BN', -10], ['BK', 0], ['BU', 10]].forEach(q => txt(q[0], cx + q[1], HT + 0.12, zz - 5.8, 2.5, INK)); }
     col.pairs.forEach((p, k) => pair(p.c, p.kind, p.names, cx - 10, cx + 10, HT, z + 70 - (u.bus ? 0 : 8) + k * 13, bus));
@@ -534,6 +534,8 @@ function bench(ex0, ez0) {
   const rel = of(c => c.type === 'relay').map(coilCol), ton = of(c => c.type === 'timer').map(coilCol), tof = of(c => c.type === 'timer_off').map(coilCol);
   for (let i = 0; i < rel.length; i += 3) units.push({name: 'Relay, three-fold', w: 150, bus: true, cols: [rel[i], rel[i + 1] || blank('relay'), rel[i + 2] || blank('relay')]});
   for (let i = 0; i < Math.max(ton.length, tof.length); i++) units.push({name: 'Time relay, two-fold', w: 126, bus: true, cols: [ton[i] || blank('timer'), tof[i] || blank('timer_off')]});
+  const tpu = of(c => c.type === 'timer_pulse').map(coilCol), tfl = of(c => c.type === 'timer_flash').map(coilCol);     // pulse and flasher relays share a unit of their own
+  for (let i = 0; i < Math.max(tpu.length, tfl.length); i++) units.push({name: 'Pulse and flasher relay', w: 126, bus: true, cols: [tpu[i] || blank('timer_pulse'), tfl[i] || blank('timer_flash')]});
   for (const c of of(c => c.type === 'counter')) {
     const r = of(q => q.type === 'counter_r' && q.label === c.label)[0] || null;
     units.push({name: 'Preset counter', w: 80, bus: true, cols: [{label: c.label, kind: 'counter', main: c, pairs: [{c, kind: 'coil', names: ['A1', 'A2']}, {c: r, kind: 'coil', names: ['R1', 'R2']}, ...rows(kc(c.label), 1)]}]});

@@ -397,6 +397,10 @@ ul.missed span { color: var(--muted); font-size: 13.5px; }
 .cres span { font-size: 12.5px; color: var(--muted); } .cres b { font: 700 22px var(--display); } .cres i { font: 12px/1.4 var(--mono); font-style: normal; color: var(--muted); } .cres.bad b { color: var(--hot); }
 @media (max-width: 900px) { .calc { grid-template-columns: 1fr; } .gl { grid-template-columns: 1fr; gap: 2px; } .tpcs { grid-template-columns: 1fr 1fr; } }
 
+.stepdia { display: block; width: 100%; max-width: 560px; margin: 4px auto 10px; background: var(--sheet); border: 1px solid var(--line); border-radius: 10px; padding: 6px; }
+.tdia { width: 100%; max-width: 460px; }
+.seqt td:nth-child(4), .seqt td:nth-child(5), .seqt td:nth-child(6) { font-weight: 500; }
+.seqerr { color: var(--hot); font-weight: 600; }
 /* ---------- small screens: a phone, or a narrow window ---------- */
 @media (max-width: 900px) {
   .home-wrap { padding: 14px 14px 70px; }

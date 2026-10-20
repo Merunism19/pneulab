@@ -62,7 +62,7 @@ const S = {
   view: {x: 40, y: 20, k: 1}, undo: [], done: [], hints: 0, fails: 0, shown: false, solved: false,
   res: null, src: {}, notes: [], scn: {carry: true, n: 0, last: 0, stamped: false}, prog: store.get('prog', {}), seq: 1,
   badges: store.get('badges', {}), bt: {}, drill: store.get('drill', {solved: 0, streak: 0, best: 0}),
-  hunt: store.get('hunt', {solved: 0, streak: 0, best: 0}), lock: false, redo: []
+  hunt: store.get('hunt', {solved: 0, streak: 0, best: 0}), cdrill: store.get('cdrill', {solved: 0, streak: 0, best: 0}), lock: false, redo: []
 };
 const comp = id => S.circ.comps.find(c => c.id === id);
 EP.state = S;
@@ -207,6 +207,8 @@ function showHome() {
   h += `<section class="chap"><div class="chap-h"><span class="n">FREE PLAY</span><h2>Sandbox and practice</h2><span>Build anything you like, let the bench set you a fresh puzzle, or sit the exam.</span></div>
     <div class="cards"><button class="card sand prac" data-go="practice"><div class="top"><span>For the exam</span><span class="chip">${PS.mocks.length ? 'last mock ' + PS.mocks[0].s + '/' + PS.mocks[0].n : 'new'}</span></div><h3>Exam practice</h3><div class="stars" style="color:var(--muted);font-size:13px;letter-spacing:0">Quick rounds by topic, a timed mock exam, the questions you got wrong, flashcards, a glossary and a calculator. ${EP.practice.allWritten().length} written questions and endless generated ones.</div></button>
     <button class="card sand" data-go="drill"><div class="top"><span>Endless practice</span><span class="chip">random</span></div><h3>Logic drill</h3><div class="stars" style="color:var(--muted);font-size:13px;letter-spacing:0">A new truth table every time. Solved: ${S.drill.solved} · first-try streak: ${S.drill.streak} (best ${S.drill.best})</div></button>
+    <button class="card sand" data-go="casc"><div class="top"><span>Endless practice</span><span class="chip">random</span></div><h3>Cascade drill</h3><div class="stars" style="color:var(--muted);font-size:13px;letter-spacing:0">A new sequence that jams when wired directly, every time. Find the conflict, cut it into groups, build the relay cascade. Solved: ${S.cdrill.solved} · first-try streak: ${S.cdrill.streak} (best ${S.cdrill.best})</div></button>
+    <button class="card sand" data-go="seqtool"><div class="top"><span>Tool</span></div><h3>Sequence analyser</h3><div class="stars" style="color:var(--muted);font-size:13px;letter-spacing:0">Type any sequence, such as A+ B+ B− A−. See its conflicts, its groups and its displacement-step diagram, then load the circuit or build it yourself.</div></button>
     <button class="card sand" data-go="hunt"><div class="top"><span>Endless practice</span><span class="chip">random</span></div><h3>Fault hunt</h3><div class="stars" style="color:var(--muted);font-size:13px;letter-spacing:0">A working machine with one hidden fault. Measure, then accuse. Found: ${S.hunt.solved} · clean streak: ${S.hunt.streak} (best ${S.hunt.best})</div></button>
     <button class="card sand" data-go="exam"><div class="top"><span>When you feel ready</span><span class="chip">${S.exam.passed ? 'passed' : 'exam'}</span></div><h3>Final exam</h3><div class="stars" style="color:var(--muted);font-size:13px;letter-spacing:0">Ten questions from the whole course, a different paper every time. Eight right earns a certificate you can print.${S.exam.best ? ' Best so far: ' + S.exam.best + '/10' : ''}</div></button>
     <button class="card sand" data-go="sandbox"><div class="top"><span>Open bench</span></div><h3>Build anything</h3><div class="stars" style="color:var(--muted);font-size:13px;letter-spacing:0">Your sheet is saved automatically, and you can send it to someone.</div></button>
@@ -226,7 +228,7 @@ $('#home').addEventListener('click', e => {
   const b = e.target.closest('[data-go]'); if (!b) return;
   Snd.ac();
   const g = b.dataset.go;
-  if (g === 'book') handbook(); else if (g === 'practice') practiceHub(); else if (g === 'set') settings(); else if (g === 'lib') library(); else if (g === 'sandbox') startSandbox(); else if (g === 'drill') startDrill(); else if (g === 'hunt') startHunt(); else if (g === 'exam') startExam(); else startLesson(g);
+  if (g === 'book') handbook(); else if (g === 'practice') practiceHub(); else if (g === 'set') settings(); else if (g === 'lib') library(); else if (g === 'sandbox') startSandbox(); else if (g === 'drill') startDrill(); else if (g === 'casc') startCascade(); else if (g === 'seqtool') seqTool(); else if (g === 'hunt') startHunt(); else if (g === 'exam') startExam(); else startLesson(g);
 });
 
 /* ---------- entering the workspace ---------- */
@@ -240,12 +242,13 @@ function enterWork() {
 }
 function startLesson(id) { const L = EP.lessons.find(l => l.id === id); if (L) openLesson(L); }
 function startHunt() { openLesson(EP.makeHunt(S.lesson && S.lesson.hunt ? S.lesson.hunt.src : null)); }
+function startCascade(moves) { openLesson(EP.makeCascade(S.lesson && S.lesson.casc, moves)); }
 function startDrill() { openLesson(EP.makeDrill(S.lesson && S.lesson.drill != null ? S.lesson.drill : -1)); }
 function openLesson(L) {
   setPower(false, true);
   S.mode = 'lesson'; S.lesson = L; S.circ = L.start(L.solution()); S.lock = L.kind === 'hunt';
   const i = EP.lessons.indexOf(L);
-  $('#w-kicker').textContent = L.kind === 'hunt' ? 'Practice · find the hidden fault' : L.drill != null ? 'Practice · a new table every time' : `Lesson ${i + 1} · ${EP.chapters[L.ch].title}`; $('#w-title').textContent = L.title;
+  $('#w-kicker').textContent = L.kind === 'hunt' ? 'Practice · find the hidden fault' : L.casc ? 'Practice · cascade drill' : L.drill != null ? 'Practice · a new table every time' : `Lesson ${i + 1} · ${EP.chapters[L.ch].title}`; $('#w-title').textContent = L.title;
   enterWork(); showIntro(0);
 }
 function startSandbox() {
@@ -288,7 +291,7 @@ function autoLabel(type) {
   const d = D[type];
   if (!d.prefix) return '';
   if (d.link) {                 // a contact or reset coil takes the label of the device it belongs to
-    const kinds = {relay: ['relay', 'timer', 'timer_off', 'counter'], psw: ['psw'], counter: ['counter']}[d.link];
+    const kinds = {relay: ['relay', 'timer', 'timer_off', 'timer_pulse', 'timer_flash', 'counter'], psw: ['psw'], counter: ['counter']}[d.link];
     const r = S.circ.comps.find(c => kinds.includes(c.type));
     return r ? r.label : {relay: 'K1', psw: 'B1', counter: 'C1'}[d.link];
   }
@@ -823,7 +826,7 @@ function renderInsp() {
     h += fld('Load against the rod', range('load', 0, 600, 10, ' N'));
   }
   if (c.type === 'fcv') h += fld('Throttle opening', range('open', 0, 100, 1, ' %'));
-  if (c.type === 'timer' || c.type === 'timer_off') h += fld('Delay', range('delay', 0.5, 10, 0.5, ' s'));
+  if (c.type.startsWith('timer')) h += fld(c.type === 'timer_flash' ? 'On and off times' : c.type === 'timer_pulse' ? 'Pulse length' : 'Delay', range('delay', 0.5, 10, 0.5, ' s'));
   if (c.type === 'counter') h += fld('Preset count', range('preset', 1, 9, 1, ''));
   if (c.type === 'psw') h += fld('Switches at', range('set', 0.5, 6, 0.5, ' bar'));
   if (c.type === 'air') h += fld('Supply pressure', `<input type="range" data-p="bar" min="0" max="8" step="0.5" value="${c.props.bar}" ${lockRun}><output>${c.props.bar} bar</output>`);
@@ -869,6 +872,8 @@ function liveInsp() {
     if (dead && st.v >= 18) h += row('state', 'full voltage, yet no current'); else
     if (c.type === 'counter') h += row('count', st.count + ' of ' + c.props.preset) + row('contacts', st.on ? 'switched (preset reached)' : 'at rest');
     else if (c.type === 'timer') h += row('state', st.on ? 'timed out — contacts switched' : st.tm > 0 ? 'timing… ' + Math.max(0, c.props.delay - st.tm).toFixed(1) + ' s left' : 'off');
+    else if (c.type === 'timer_pulse') h += row('state', st.on ? 'pulse… ' + Math.max(0, c.props.delay - st.tt).toFixed(1) + ' s left' : st.hi ? 'pulse over — still energised' : 'off');
+    else if (c.type === 'timer_flash') h += row('state', !st.hi ? 'off' : st.on ? 'flashing — contacts switched' : 'flashing — contacts at rest');
     else if (c.type === 'timer_off') h += row('state', st.on && st.tm > 0 ? 'holding on… ' + Math.max(0, c.props.delay - st.tm).toFixed(1) + ' s left' : st.on ? 'energised — contacts switched' : 'off');
     else if (c.type !== 'lamp') h += row('state', st.on ? 'energised' : st.v > 1 ? 'too little voltage' : 'off');
   } else if (c.type === 'psu') h = row('total current', (st.I * 1000).toFixed(0) + ' mA') + row('fuse', st.tripped ? 'TRIPPED' : 'ok (trips at 6 A)');
@@ -935,7 +940,7 @@ function renderCoach() {
       <div class="row"><button class="btn primary" data-a="accuse">Accuse the selected part</button><button class="btn" data-a="test">Self-test</button><button class="btn ghost" data-a="giveup">Show me</button></div>
       ${S.fails ? `<p>Wrong accusations so far: <b>${S.fails}</b></p>` : ''}${S.res ? resultsHTML(S.res, true) : ''}</div>`;
   } else if (L) {
-    h = `<div class="kick">${L.kind === 'guided' ? 'Guided lesson' : L.id.startsWith('fix') ? 'Repair job' : L.drill != null ? 'Logic drill' : 'Challenge'}</div><h2>${esc(L.title)}</h2><p class="brief">${L.brief}</p><button class="link" data-a="brief">Read the briefing again</button>`;
+    h = `<div class="kick">${L.kind === 'guided' ? 'Guided lesson' : L.id.startsWith('fix') ? 'Repair job' : L.casc ? 'Cascade drill' : L.drill != null ? 'Logic drill' : 'Challenge'}</div><h2>${esc(L.title)}</h2><p class="brief">${L.brief}</p><button class="link" data-a="brief">Read the briefing again</button>`;
     if (L.steps) {
       const cur = L.steps.findIndex((_, j) => !S.done[j]);
       h += '<ol class="steps">' + L.steps.map((s, i) => `<li class="${S.done[i] ? 'done' : i === cur ? 'cur' : ''}">${s.t}</li>`).join('') + '</ol>';
@@ -1126,6 +1131,57 @@ function exportPicture() {
   img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
 }
 EP.exportSVG = exportSVG;
+function completeCasc(L) {
+  const first = !S.fails && !S.shown, d = S.cdrill;
+  d.solved++; d.streak = first ? d.streak + 1 : 0; d.best = Math.max(d.best, d.streak); store.set('cdrill', d);
+  Snd.win(); if (d.streak >= 3) award('casc');
+  openModal(`<div class="dlg"><div class="dlg-h"><div class="kick">Cascade drill solved</div><h2>${esc(L.casc)}</h2></div>
+    <div class="dlg-b"><div class="stars-big">${first ? '<b>★</b>' : '★'}</div>
+      <p style="text-align:center;color:var(--muted);margin-top:0">Cascades solved: <b>${d.solved}</b> · first-try streak: <b>${d.streak}</b> · best: <b>${d.best}</b></p>
+      <ul class="learned">${L.learned.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>
+    <div class="dlg-f"><button class="btn" data-act="stay">Keep playing here</button><div class="row"><button class="btn" data-act="home">Lesson map</button>
+      <button class="btn primary" data-act="nx">Another sequence</button></div></div></div>`,
+  a => { if (a === 'stay') closeModal(); else if (a === 'home') showHome(); else if (a === 'nx') startCascade(); });
+}
+/* the sequence analyser: type a sequence, see what a direct circuit would do and how a cascade splits it */
+let seqLast = 'A+ B+ B− A−';
+function seqTool(text) {
+  const C = EP.cascade, txt = text == null ? seqLast : text, r = C.parse(txt);
+  let body = '';
+  if (r.err) body = `<p class="seqerr">${esc(r.err)}</p>`;
+  else {
+    seqLast = C.text(r.moves);
+    const ms = r.moves, pr = C.problems(ms), G = C.groups(ms), n = G.length, nn = ms.length;
+    const live = [], pos = {}; ms.forEach(m => { pos[m.c] = 0; });
+    const rows = ms.map((m, j) => {                     // the step table: what starts each move, and what else is live at that moment
+      const sw = j === 0 ? 'S1 + ' + C.sensor(ms[nn - 1]) : C.sensor(ms[j - 1]), made = Object.keys(pos).map(c => c.toLowerCase() + pos[c]).join(' ');
+      const bad = pr.length && pr[0].step === j;
+      pos[m.c] = m.d === '+' ? 1 : 0;
+      return `<tr class="${bad ? 'no' : ''}"><td>${j + 1}</td><td><b>${esc(C.moveText(m))}</b></td><td>${esc(C.sol(m))}</td><td>${esc(sw)}</td><td>${esc(made)}</td><td>${esc(C.sensor(m))}</td></tr>`;
+    }).join('');
+    body = C.diagram(ms, pr.length ? pr[0].step : null) +
+      `<table class="tt seqt"><thead><tr><th>step</th><th>move</th><th>coil</th><th>started directly by</th><th>switches made before it</th><th>ends at</th></tr></thead><tbody>${rows}</tbody></table>` +
+      `<div class="box"><h4>Wired directly</h4><p>${pr.length ? esc(C.problemText(pr[0])) : 'No conflict: every move can be started by the switch of the move before it.'}</p></div>` +
+      `<div class="box"><h4>Cascade</h4><p>Groups: <b>${esc(C.groupText(G))}</b> — ${n} groups, ${n - 1} relay${n - 1 === 1 ? '' : 's'}. Group lines: ${G.map((g, i) => i < n - 1 ? 'line ' + (i + 1) + ' through K' + (i + 1) : 'line ' + n + ' through normally-closed contacts of every relay').join(', ')}.</p></div>`;
+  }
+  openModal(`<div class="dlg wide"><button class="dlg-x" data-act="close">×</button><div class="dlg-h"><div class="kick">Tool</div><h2>Sequence analyser</h2></div>
+    <div class="dlg-b"><div class="lib-new"><input class="share" id="seq-in" type="text" value="${esc(txt)}" placeholder="A+ B+ B− A−" autocomplete="off" spellcheck="false"><button class="btn primary" data-act="go">Analyse</button><button class="btn ghost" data-act="rnd">Random</button></div>
+      ${body}</div>
+    <div class="dlg-f"><span></span><div class="row">${r.err ? '' : '<button class="btn" data-act="direct">Load the direct wiring</button><button class="btn" data-act="casc">Load the cascade</button><button class="btn primary" data-act="build">Build it yourself</button>'}</div></div></div>`,
+  act => {
+    const C2 = EP.cascade, cur = C2.parse($('#seq-in').value);
+    if (act === 'go') seqTool($('#seq-in').value);
+    else if (act === 'rnd') { let ms; do ms = C2.random(2 + Math.floor(Math.random() * 2)); while (!C2.problems(ms).length); seqTool(C2.text(ms)); }
+    else if (cur.err) seqTool($('#seq-in').value);
+    else if (act === 'build') { closeModal(); startCascade(cur.moves); }
+    else if (act === 'direct' || act === 'casc') {
+      const circ = act === 'casc' ? C2.circuit(cur.moves) : C2.direct(cur.moves);
+      if (S.mode !== 'sandbox') startSandbox();
+      closeModal(); loadCircuit(circ, act === 'casc' ? 'The cascade for ' + esc(C2.text(cur.moves)) + ' is on the bench. Power on and tap S1.' : 'The direct wiring is on the bench. Power on, tap S1 and watch where it goes wrong.');
+    }
+  });
+  const inp = $('#seq-in'); if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') seqTool(inp.value); });
+}
 function completeDrill(L) {
   const first = !S.fails, d = S.drill;
   d.solved++; d.streak = first ? d.streak + 1 : 0; d.best = Math.max(d.best, d.streak); store.set('drill', d);
@@ -1141,6 +1197,7 @@ function completeDrill(L) {
 function complete() {
   const L = S.lesson; if (!L) return;
   if (L.drill != null) return completeDrill(L);
+  if (L.casc) return completeCasc(L);
   const stars = S.shown ? 1 : Math.max(1, 3 - (S.hints ? 1 : 0) - (S.fails ? 1 : 0));
   S.prog[L.id] = Math.max(S.prog[L.id] || 0, stars); store.set('prog', S.prog);
   Snd.win(); Hap.buzz([20, 60, 20, 60, 45]);
@@ -1197,6 +1254,8 @@ function practiceHub() {
         <button class="pmode" data-act="weak"${weak ? '' : ' disabled'}><b>Weak spots</b><span>${weak ? weak + ' question' + (weak === 1 ? '' : 's') + ' you got wrong. Each one stays here until you get it right.' : 'Questions you get wrong collect here.'}</span></button>
         <button class="pmode" data-act="cards"><b>Flashcards</b><span>Every symbol and ${PR.glossary.length} terms. The cards you miss come round first.</span></button>
         <button class="pmode" data-act="calc"><b>Calculator</b><span>Cylinder force and air consumption, with the working written out.</span></button>
+        <button class="pmode" data-act="casc"><b>Cascade drill</b><span>A fresh sequence with a conflict to build, as often as you like.</span></button>
+        <button class="pmode" data-act="seqtool"><b>Sequence analyser</b><span>Conflicts, groups and the displacement-step diagram for any sequence.</span></button>
         <button class="pmode" data-act="gloss"><b>Glossary</b><span>${PR.glossary.length} terms from A to Z, searchable.</span></button>
       </div>
       ${PS.mocks.length ? `<div class="box"><h4>Your mock exams</h4><div class="mocks">${PS.mocks.slice(0, 8).map(m => `<span class="${m.s / m.n >= 0.7 ? 'pass' : ''}"><b>${m.s}/${m.n}</b>${new Date(m.t).toLocaleDateString(undefined, {month: 'short', day: 'numeric'})}</span>`).join('')}</div><p>70 % counts as a pass here.</p></div>` : ''}
@@ -1208,6 +1267,8 @@ function practiceHub() {
     else if (act === 'cards') flashcards();
     else if (act === 'calc') handbook('calc');
     else if (act === 'gloss') handbook('gloss');
+    else if (act === 'casc') { closeModal(); startCascade(); }
+    else if (act === 'seqtool') seqTool();
   });
 }
 function startQuiz(mode, qs) {
@@ -1415,6 +1476,7 @@ const BADGES = [
   ['logic', 'Logician', 'Solve three logic drills in a row, each on the first test run.'],
   ['hold', 'Halfway there', 'Stop a piston between its end positions with a 5/3 valve and keep it there for 3 seconds.'],
   ['sort', 'Quality control', 'Let the belt run until ten parts in a row have been sorted right: metal pushed off, everything else left alone.'],
+  ['casc', 'Cascade master', 'Solve three cascade drills in a row, each on the first test run without peeking.'],
   ['mock', 'Exam ready', 'Score at least 18 out of 20 in a mock exam.'],
   ['cert', 'Certified', 'Pass the final exam with at least 8 out of 10.'],
   ['sleuth', 'Fault finder', 'Find three hidden faults in a row without a single wrong accusation.'],
@@ -1580,7 +1642,8 @@ function settings() {
     else if (act === 'reset') { b.dataset.act = 'reset2'; b.textContent = 'Tap again to erase all progress'; b.classList.add('danger'); }
     else if (act === 'reset2') {
       S.prog = {}; S.badges = {}; S.drill = {solved: 0, streak: 0, best: 0}; S.hunt = {solved: 0, streak: 0, best: 0}; S.exam = {best: 0, passed: false, name: S.exam.name};
-      for (const k of ['prog', 'badges', 'drill', 'hunt', 'exam']) store.set(k, S[k]);
+      S.cdrill = {solved: 0, streak: 0, best: 0};
+      for (const k of ['prog', 'badges', 'drill', 'hunt', 'exam', 'cdrill']) store.set(k, S[k]);
       PS.topics = {}; PS.boxes = {}; PS.mocks = []; psave(); store.set('fbox', {});
       if (S.mode === 'home') showHome(); else settings();
       toast('Progress erased. Your saved circuits are still there.');

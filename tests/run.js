@@ -120,6 +120,41 @@ const chk = (name, ok) => { if (!ok) bad++; console.log(ok ? '  ok  ' : ' FAIL '
   const L = EP.lessons.find(l => l.id === 'proj1'), c = L.solution(); c.comps.find(x => x.id === 'B1').type = 's_ind';
   chk('proj1: an inductive sensor cannot see the plastic housings, so it fails', !EP.evalLesson(c, L).pass);
 }
+// timer relays: a pulse timer drops out while still energised, a flasher goes on and off
+{
+  const N = (t, id, l, x) => EP.newComp(t, id, 0, 0, Object.assign({label: l}, x || {})), W = (a, b) => ({id: a + b, k: 'e', a: {c: a.split('.')[0], p: a.split('.')[1]}, b: {c: b.split('.')[0], p: b.split('.')[1]}});
+  const trace = (type, d) => {
+    const c = {comps: [N('psu', 'PSU', ''), N('pb_no', 'S1', 'S1'), N(type, 'KT1', 'KT1', {delay: d}), N('k_no', 'K', 'KT1'), N('lamp', 'H1', 'H1')],
+      wires: [W('PSU.pos', 'S1.3'), W('S1.4', 'KT1.A1'), W('KT1.A2', 'PSU.neg'), W('PSU.pos', 'K.3'), W('K.4', 'H1.a'), W('H1.b', 'PSU.neg')]};
+    const s = new EP.Sim(c); s.power(true); s.run(0.1); s.pressLabel('S1', true); let tr = '';
+    for (let i = 0; i < 30; i++) { s.run(0.1); tr += s.check(['lamp', 'H1', true]) ? '#' : '.'; }
+    s.pressLabel('S1', false); s.run(0.1); return tr + (s.check(['lamp', 'H1', true]) ? '#' : '.');
+  };
+  chk('timers: pulse timer, 1 s, held for 3 s, gives one 1 s pulse', trace('timer_pulse', 1) === '#'.repeat(10) + '.'.repeat(21));
+  chk('timers: flasher, 0.5 s, goes on and off for as long as it is energised', trace('timer_flash', 0.5) === '#####.....#####.....#####......');
+}
+// cascades: the conflict analysis agrees with a directly wired circuit, and the generated cascade runs every sequence twice
+{
+  const C = EP.cascade;
+  const run = (circ, ms, n) => {
+    const s = new EP.Sim(circ); s.power(true); s.run(0.6);
+    for (let k = 0; k < n; k++) { s.pressLabel('S1', true); s.run(0.15); s.pressLabel('S1', false); s.run(2.2 * ms.length + 2); }
+    const want = []; for (let k = 0; k < n; k++) ms.forEach(m => want.push(C.cyl(m) + m.d));
+    return s.log.join(' ') === want.join(' ');
+  };
+  let agree = true, works = true, seen = new Set(), groups = {};
+  for (let i = 0; seen.size < 24 && i < 300; i++) {
+    const ms = C.random(2 + (i % 3 === 2 ? 1 : 0) + (i % 8 === 7 ? 1 : 0)), t = C.text(ms); if (seen.has(t)) continue; seen.add(t);
+    if (run(C.direct(ms), ms, 1) === !!C.problems(ms).length) agree = false;
+    if (!run(C.circuit(ms), ms, 2)) { works = false; console.log('      cascade failed for', t); }
+    const g = C.groups(ms).length; groups[g] = (groups[g] || 0) + 1;
+  }
+  chk('cascades: conflict analysis matches a direct circuit on 24 random sequences', agree);
+  chk('cascades: generated relay cascade runs all 24 twice ' + JSON.stringify(groups), works);
+  const L = EP.makeCascade(null);
+  chk('cascade drill: ' + L.casc + ' — solution passes, empty bench fails', EP.evalLesson(L.solution(), L).pass && !EP.evalLesson(L.start(L.solution()), L).pass);
+  chk('sequence parser refuses a cylinder left extended', !!C.parse('A+ B+ B-').err && !C.parse('A+ B+ B− A−').err);
+}
 // physics sanity
 const sim = new EP.Sim(EP.solutions.direct()); sim.power(true); sim.run(0.6);
 const c = sim.cyl('1A'), st = sim.st[c.id];
